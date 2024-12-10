@@ -25,6 +25,7 @@ WEAPONS = [
 ]
 
 all_pickups = []
+all_enemies = []
 chunk_update_queue = []
 
 def chunk_coords_from_world(x, z):

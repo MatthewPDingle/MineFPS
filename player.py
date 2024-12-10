@@ -2,6 +2,7 @@
 import math
 import pygame
 from config import PLAYER_COLLISION_RADIUS, PLAYER_HEIGHT, MOVE_SPEED, JUMP_SPEED, GRAVITY, PLAYER_EYE_HEIGHT, MOUSE_SENSITIVITY, all_pickups
+from pygame.locals import *
 
 def check_collision(px, py, pz, world):
     min_x = int(math.floor(px - PLAYER_COLLISION_RADIUS))

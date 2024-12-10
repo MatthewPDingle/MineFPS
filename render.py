@@ -1,6 +1,7 @@
 # render.py
 import pygame
 from pygame.locals import *
+import math
 from OpenGL.GL import *
 from OpenGL.GLU import *
 from config import *
@@ -42,6 +43,40 @@ def draw_text_2d_cached(font, text, x, y):
     glEnd()
     glDisable(GL_TEXTURE_2D)
     glDisable(GL_BLEND)
+
+def draw_box(cx, cy, cz, hw, hh, hl):
+    v = [
+        (cx - hw, cy - hh, cz - hl),
+        (cx + hw, cy - hh, cz - hl),
+        (cx + hw, cy + hh, cz - hl),
+        (cx - hw, cy + hh, cz - hl),
+
+        (cx - hw, cy - hh, cz + hl),
+        (cx - hw, cy + hh, cz + hl),
+        (cx + hw, cy + hh, cz + hl),
+        (cx + hw, cy - hh, cz + hl),
+    ]
+
+    glBegin(GL_QUADS)
+    glVertex3f(*v[0]); glVertex3f(*v[1]); glVertex3f(*v[2]); glVertex3f(*v[3])
+    glVertex3f(*v[4]); glVertex3f(*v[5]); glVertex3f(*v[6]); glVertex3f(*v[7])
+    glVertex3f(*v[0]); glVertex3f(*v[3]); glVertex3f(*v[5]); glVertex3f(*v[4])
+    glVertex3f(*v[1]); glVertex3f(*v[7]); glVertex3f(*v[6]); glVertex3f(*v[2])
+    glVertex3f(*v[3]); glVertex3f(*v[2]); glVertex3f(*v[6]); glVertex3f(*v[5])
+    glVertex3f(*v[0]); glVertex3f(*v[4]); glVertex3f(*v[7]); glVertex3f(*v[1])
+    glEnd()
+
+    edges = [
+        (0,1),(1,2),(2,3),(3,0),
+        (4,5),(5,6),(6,7),(7,4),
+        (0,4),(1,7),(2,6),(3,5)
+    ]
+    glBegin(GL_LINES)
+    glColor3f(0,0,0)
+    for (a,b) in edges:
+        glVertex3f(*v[a])
+        glVertex3f(*v[b])
+    glEnd()
 
 def set_display_mode(fullscreen):
     pygame.display.gl_set_attribute(pygame.GL_MULTISAMPLEBUFFERS, 1)
@@ -91,194 +126,118 @@ def build_chunk_vertex_data(chunk_data, cx, cz):
     def block_exists(bx,by,bz):
         return (bx,by,bz) in chunk_data
 
-    face_vertices = []
-    edge_vertices = []
+    face_data = []
+    edge_data = []
     size = 1.0
 
     def add_face_edges(ex,ey,ez, direction):
-        if direction == "top":
-            edge_vertices.extend([
-                (ex, ey+size, ez, 0,0,0),
-                (ex+size, ey+size, ez,0,0,0),
-
-                (ex+size, ey+size, ez,0,0,0),
-                (ex+size, ey+size, ez+size,0,0,0),
-
-                (ex+size, ey+size, ez+size,0,0,0),
-                (ex, ey+size, ez+size,0,0,0),
-
-                (ex, ey+size, ez+size,0,0,0),
-                (ex, ey+size, ez,0,0,0),
-            ])
-        elif direction == "bottom":
-            edge_vertices.extend([
-                (ex, ey, ez,0,0,0),
-                (ex+size, ey, ez,0,0,0),
-
-                (ex+size, ey, ez,0,0,0),
-                (ex+size, ey, ez+size,0,0,0),
-
-                (ex+size, ey, ez+size,0,0,0),
-                (ex, ey, ez+size,0,0,0),
-
-                (ex, ey, ez+size,0,0,0),
-                (ex, ey, ez,0,0,0),
-            ])
-        elif direction == "north":
-            edge_vertices.extend([
-                (ex, ey, ez,0,0,0),
-                (ex+size, ey, ez,0,0,0),
-
-                (ex+size, ey, ez,0,0,0),
-                (ex+size, ey+size, ez,0,0,0),
-
-                (ex+size, ey+size, ez,0,0,0),
-                (ex, ey+size, ez,0,0,0),
-
-                (ex, ey+size, ez,0,0,0),
-                (ex, ey, ez,0,0,0),
-            ])
-        elif direction == "south":
-            edge_vertices.extend([
-                (ex, ey, ez+size,0,0,0),
-                (ex+size, ey, ez+size,0,0,0),
-
-                (ex+size, ey, ez+size,0,0,0),
-                (ex+size, ey+size, ez+size,0,0,0),
-
-                (ex+size, ey+size, ez+size,0,0,0),
-                (ex, ey+size, ez+size,0,0,0),
-
-                (ex, ey+size, ez+size,0,0,0),
-                (ex, ey, ez+size,0,0,0),
-            ])
-        elif direction == "west":
-            edge_vertices.extend([
-                (ex, ey, ez,0,0,0),
-                (ex, ey, ez+size,0,0,0),
-
-                (ex, ey, ez+size,0,0,0),
-                (ex, ey+size, ez+size,0,0,0),
-
-                (ex, ey+size, ez+size,0,0,0),
-                (ex, ey+size, ez,0,0,0),
-
-                (ex, ey+size, ez,0,0,0),
-                (ex, ey, ez,0,0,0),
-            ])
-        elif direction == "east":
-            edge_vertices.extend([
-                (ex+size, ey, ez,0,0,0),
-                (ex+size, ey, ez+size,0,0,0),
-
-                (ex+size, ey, ez+size,0,0,0),
-                (ex+size, ey+size, ez+size,0,0,0),
-
-                (ex+size, ey+size, ez+size,0,0,0),
-                (ex+size, ey+size, ez,0,0,0),
-
-                (ex+size, ey+size, ez,0,0,0),
-                (ex+size, ey, ez,0,0,0),
-            ])
+        directions = {
+            "top":[(ex,ey+size,ez),(ex+size,ey+size,ez),(ex+size,ey+size,ez+size),(ex,ey+size,ez+size)],
+            "bottom":[(ex,ey,ez),(ex+size,ey,ez),(ex+size,ey,ez+size),(ex,ey,ez+size)],
+            "north":[(ex,ey,ez),(ex+size,ey,ez),(ex+size,ey+size,ez),(ex,ey+size,ez)],
+            "south":[(ex,ey,ez+size),(ex+size,ey,ez+size),(ex+size,ey+size,ez+size),(ex,ey+size,ez+size)],
+            "west":[(ex,ey,ez),(ex,ey,ez+size),(ex,ey+size,ez+size),(ex,ey+size,ez)],
+            "east":[(ex+size,ey,ez),(ex+size,ey,ez+size),(ex+size,ey+size,ez+size),(ex+size,ey+size,ez)]
+        }
+        quads = directions[direction]
+        for i in range(len(quads)):
+            x1,y1,z1 = quads[i]
+            x2,y2,z2 = quads[(i+1)%len(quads)]
+            edge_data.extend([x1,y1,z1,0,0,0,x2,y2,z2,0,0,0])
 
     for (bx,by,bz), val in chunk_data.items():
         c = block_colors(val)
         # top
         if not block_exists(bx, by+1, bz):
             tc = c["top"]
-            face_vertices += [
-                (bx,by+size,bz,tc[0],tc[1],tc[2]),
-                (bx+size,by+size,bz,tc[0],tc[1],tc[2]),
-                (bx+size,by+size,bz+size,tc[0],tc[1],tc[2]),
+            face_data += [
+                bx,by+size,bz,tc[0],tc[1],tc[2],
+                bx+size,by+size,bz,tc[0],tc[1],tc[2],
+                bx+size,by+size,bz+size,tc[0],tc[1],tc[2],
 
-                (bx,by+size,bz,tc[0],tc[1],tc[2]),
-                (bx+size,by+size,bz+size,tc[0],tc[1],tc[2]),
-                (bx,by+size,bz+size,tc[0],tc[1],tc[2]),
+                bx,by+size,bz,tc[0],tc[1],tc[2],
+                bx+size,by+size,bz+size,tc[0],tc[1],tc[2],
+                bx,by+size,bz+size,tc[0],tc[1],tc[2],
             ]
             add_face_edges(bx,by,bz,"top")
 
         # bottom
         if not block_exists(bx, by-1, bz):
             bc = c["bottom"]
-            face_vertices += [
-                (bx,by,bz,bc[0],bc[1],bc[2]),
-                (bx+size,by,bz+size,bc[0],bc[1],bc[2]),
-                (bx+size,by,bz,bc[0],bc[1],bc[2]),
+            face_data += [
+                bx,by,bz,bc[0],bc[1],bc[2],
+                bx+size,by,bz+size,bc[0],bc[1],bc[2],
+                bx+size,by,bz,bc[0],bc[1],bc[2],
 
-                (bx,by,bz,bc[0],bc[1],bc[2]),
-                (bx,by,bz+size,bc[0],bc[1],bc[2]),
-                (bx+size,by,bz+size,bc[0],bc[1],bc[2]),
+                bx,by,bz,bc[0],bc[1],bc[2],
+                bx,by,bz+size,bc[0],bc[1],bc[2],
+                bx+size,by,bz+size,bc[0],bc[1],bc[2],
             ]
             add_face_edges(bx,by,bz,"bottom")
 
-        # north (bz-1)
+        # north
         if not block_exists(bx, by, bz-1):
             sc = c["side"]
-            face_vertices += [
-                (bx,by,bz,sc[0],sc[1],sc[2]),
-                (bx+size,by,bz,sc[0],sc[1],sc[2]),
-                (bx+size,by+size,bz,sc[0],sc[1],sc[2]),
+            face_data += [
+                bx,by,bz,sc[0],sc[1],sc[2],
+                bx+size,by,bz,sc[0],sc[1],sc[2],
+                bx+size,by+size,bz,sc[0],sc[1],sc[2],
 
-                (bx,by,bz,sc[0],sc[1],sc[2]),
-                (bx+size,by+size,bz,sc[0],sc[1],sc[2]),
-                (bx,by+size,bz,sc[0],sc[1],sc[2]),
+                bx,by,bz,sc[0],sc[1],sc[2],
+                bx+size,by+size,bz,sc[0],sc[1],sc[2],
+                bx,by+size,bz,sc[0],sc[1],sc[2],
             ]
             add_face_edges(bx,by,bz,"north")
 
-        # south (bz+1)
+        # south
         if not block_exists(bx, by, bz+1):
             sc = c["side"]
-            face_vertices += [
-                (bx,by,bz+size,sc[0],sc[1],sc[2]),
-                (bx+size,by,bz+size,sc[0],sc[1],sc[2]),
-                (bx+size,by+size,bz+size,sc[0],sc[1],sc[2]),
+            face_data += [
+                bx,by,bz+size,sc[0],sc[1],sc[2],
+                bx+size,by,bz+size,sc[0],sc[1],sc[2],
+                bx+size,by+size,bz+size,sc[0],sc[1],sc[2],
 
-                (bx,by,bz+size,sc[0],sc[1],sc[2]),
-                (bx+size,by+size,bz+size,sc[0],sc[1],sc[2]),
-                (bx,by+size,bz+size,sc[0],sc[1],sc[2]),
+                bx,by,bz+size,sc[0],sc[1],sc[2],
+                bx+size,by+size,bz+size,sc[0],sc[1],sc[2],
+                bx,by+size,bz+size,sc[0],sc[1],sc[2],
             ]
             add_face_edges(bx,by,bz,"south")
 
-        # west (bx-1)
+        # west
         if not block_exists(bx-1, by, bz):
             sc = c["side"]
-            face_vertices += [
-                (bx,by,bz,sc[0],sc[1],sc[2]),
-                (bx,by,bz+size,sc[0],sc[1],sc[2]),
-                (bx,by+size,bz+size,sc[0],sc[1],sc[2]),
+            face_data += [
+                bx,by,bz,sc[0],sc[1],sc[2],
+                bx,by,bz+size,sc[0],sc[1],sc[2],
+                bx,by+size,bz+size,sc[0],sc[1],sc[2],
 
-                (bx,by,bz,sc[0],sc[1],sc[2]),
-                (bx,by+size,bz+size,sc[0],sc[1],sc[2]),
-                (bx,by+size,bz,sc[0],sc[1],sc[2]),
+                bx,by,bz,sc[0],sc[1],sc[2],
+                bx,by+size,bz+size,sc[0],sc[1],sc[2],
+                bx,by+size,bz,sc[0],sc[1],sc[2],
             ]
             add_face_edges(bx,by,bz,"west")
 
-        # east (bx+1)
+        # east
         if not block_exists(bx+1, by, bz):
             sc = c["side"]
-            face_vertices += [
-                (bx+size,by,bz,sc[0],sc[1],sc[2]),
-                (bx+size,by,bz+size,sc[0],sc[1],sc[2]),
-                (bx+size,by+size,bz+size,sc[0],sc[1],sc[2]),
+            face_data += [
+                bx+size,by,bz,sc[0],sc[1],sc[2],
+                bx+size,by,bz+size,sc[0],sc[1],sc[2],
+                bx+size,by+size,bz+size,sc[0],sc[1],sc[2],
 
-                (bx+size,by,bz,sc[0],sc[1],sc[2]),
-                (bx+size,by+size,bz+size,sc[0],sc[1],sc[2]),
-                (bx+size,by+size,bz,sc[0],sc[1],sc[2]),
+                bx+size,by,bz,sc[0],sc[1],sc[2],
+                bx+size,by+size,bz+size,sc[0],sc[1],sc[2],
+                bx+size,by+size,bz,sc[0],sc[1],sc[2],
             ]
             add_face_edges(bx,by,bz,"east")
 
-    def flatten_verts(verts):
-        arr = []
-        for v in verts:
-            arr.extend(v)
-        return arr
+    face_data_gl = (GLfloat * len(face_data))(*face_data)
+    edge_data_gl = (GLfloat * len(edge_data))(*edge_data)
 
-    face_data = flatten_verts(face_vertices)
-    edge_data = flatten_verts(edge_vertices)
-    return face_data, edge_data
+    return (face_data_gl, edge_data_gl)
 
 def create_vbo_from_vertex_data(face_data, edge_data):
-    all_data = face_data + edge_data
+    all_data = list(face_data) + list(edge_data)
     vertex_data_gl = (GLfloat * len(all_data))(*all_data)
 
     vbo_id = glGenBuffers(1)

@@ -6,13 +6,15 @@ from OpenGL.GL import *
 from OpenGL.GLU import *
 
 from config import *
-from render import set_display_mode, draw_text_2d_cached, render_chunk_vbo, text_cache, build_chunk_vertex_data, create_vbo_from_vertex_data
+from config import chunk_coords_from_world
+from render import set_display_mode, draw_text_2d_cached, render_chunk_vbo, text_cache, build_chunk_vertex_data, create_vbo_from_vertex_data, draw_box
 from world import (create_initial_world, process_chunk_updates, all_initial_chunks_loaded,
-                   update_loaded_chunks, chunk_update_queue, chunk_coords_from_world, remove_block)
+                   update_loaded_chunks, chunk_update_queue, remove_block)
 from player import move_player, apply_gravity, player_pickup
 from entities import Bullet, Rocket, Explosion
 from chunk_worker import generation_queue, generated_chunks_queue, start_chunk_worker
 import bulletmarks
+import entities
 
 player_health = 100
 PLAYER_MAX_HEALTH = 100
@@ -29,10 +31,6 @@ inventory = {
     "rocket": {"ammo":5, "owned":True}
 }
 
-# Add fire rate control
-# pistol: no delay needed (can fire as fast as you can click)
-# shotgun: 0.5s minimum delay
-# rocket: 1.0s minimum delay
 weapon_fire_cooldown = {
     "pistol": 0.0,
     "shotgun": 0.5,
@@ -66,40 +64,6 @@ def current_weapon_name():
 def current_weapon_ammo():
     wid = current_weapon_id()
     return inventory[wid]["ammo"]
-
-def draw_box(cx, cy, cz, hw, hh, hl):
-    v = [
-        (cx - hw, cy - hh, cz - hl),
-        (cx + hw, cy - hh, cz - hl),
-        (cx + hw, cy + hh, cz - hl),
-        (cx - hw, cy + hh, cz - hl),
-
-        (cx - hw, cy - hh, cz + hl),
-        (cx - hw, cy + hh, cz + hl),
-        (cx + hw, cy + hh, cz + hl),
-        (cx + hw, cy - hh, cz + hl),
-    ]
-
-    glBegin(GL_QUADS)
-    glVertex3f(*v[0]); glVertex3f(*v[1]); glVertex3f(*v[2]); glVertex3f(*v[3])
-    glVertex3f(*v[4]); glVertex3f(*v[5]); glVertex3f(*v[6]); glVertex3f(*v[7])
-    glVertex3f(*v[0]); glVertex3f(*v[3]); glVertex3f(*v[5]); glVertex3f(*v[4])
-    glVertex3f(*v[1]); glVertex3f(*v[7]); glVertex3f(*v[6]); glVertex3f(*v[2])
-    glVertex3f(*v[3]); glVertex3f(*v[2]); glVertex3f(*v[6]); glVertex3f(*v[5])
-    glVertex3f(*v[0]); glVertex3f(*v[4]); glVertex3f(*v[7]); glVertex3f(*v[1])
-    glEnd()
-
-    edges = [
-        (0,1),(1,2),(2,3),(3,0),
-        (4,5),(5,6),(6,7),(7,4),
-        (0,4),(1,7),(2,6),(3,5)
-    ]
-    glBegin(GL_LINES)
-    glColor3f(0,0,0)
-    for (a,b) in edges:
-        glVertex3f(*v[a])
-        glVertex3f(*v[b])
-    glEnd()
 
 def draw_pistol():
     glColor3f(0.8,0.8,0.8)
@@ -186,8 +150,41 @@ def draw_simple_weapon(wid):
         glColor3f(*get_weapon_color(wid))
         draw_box(0,0,0,0.1,0.1,0.2)
 
+def procedural_clouds(px, pz, radius=RENDER_DISTANCE):
+    from config import chunk_coords_from_world
+    pcx, pcz = chunk_coords_from_world(px, pz)
+    clouds = []
+    cloud_rand = random.Random() 
+    for cx in range(pcx - radius, pcx + radius + 1):
+        for cz in range(pcz - radius, pcz + radius + 1):
+            seed_val = (cx * 374761393 + cz * 668265263) ^ 0x12345678
+            cloud_rand.seed(seed_val)
+            cloud_x = cloud_rand.uniform(cx*CHUNK_SIZE, cx*CHUNK_SIZE+CHUNK_SIZE)
+            cloud_z = cloud_rand.uniform(cz*CHUNK_SIZE, cz*CHUNK_SIZE+CHUNK_SIZE)
+            cloud_y = cloud_rand.uniform(15,20)
+            size = cloud_rand.uniform(5,10)
+            clouds.append((cloud_x, cloud_y, cloud_z, size))
+    return clouds
+
+def draw_clouds(px, py, pz, rx, ry):
+    clouds = procedural_clouds(px, pz)
+    glEnable(GL_BLEND)
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+    glColor4f(1.0,1.0,1.0,0.8)
+    for (cx,cy,cz,size) in clouds:
+        dist = math.sqrt((cx - px)**2 + (cz - pz)**2)
+        if dist < CHUNK_SIZE*(RENDER_DISTANCE+1):
+            glBegin(GL_QUADS)
+            glVertex3f(cx - size, cy, cz - size)
+            glVertex3f(cx + size, cy, cz - size)
+            glVertex3f(cx + size, cy, cz + size)
+            glVertex3f(cx - size, cy, cz + size)
+            glEnd()
+    glDisable(GL_BLEND)
+
 def draw_bullet_marks():
-    marks_dict = bulletmarks.get_all_bullet_marks()
+    from bulletmarks import get_all_bullet_marks
+    marks_dict = get_all_bullet_marks()
     size = 0.02
     glEnable(GL_POLYGON_OFFSET_FILL)
     glPolygonOffset(-1.0,-1.0)
@@ -241,59 +238,6 @@ def draw_bullet_marks():
     glEnd()
     glDisable(GL_POLYGON_OFFSET_FILL)
 
-def procedural_clouds(px, pz, radius=RENDER_DISTANCE):
-    from config import chunk_coords_from_world
-    pcx, pcz = chunk_coords_from_world(px, pz)
-    clouds = []
-    cloud_rand = random.Random() 
-    for cx in range(pcx - radius, pcx + radius + 1):
-        for cz in range(pcz - radius, pcz + radius + 1):
-            seed_val = (cx * 374761393 + cz * 668265263) ^ 0x12345678
-            cloud_rand.seed(seed_val)
-            cloud_x = cloud_rand.uniform(cx*CHUNK_SIZE, cx*CHUNK_SIZE+CHUNK_SIZE)
-            cloud_z = cloud_rand.uniform(cz*CHUNK_SIZE, cz*CHUNK_SIZE+CHUNK_SIZE)
-            cloud_y = cloud_rand.uniform(15,20)
-            size = cloud_rand.uniform(5,10)
-            clouds.append((cloud_x, cloud_y, cloud_z, size))
-    return clouds
-
-def draw_clouds(px, py, pz, rx, ry):
-    clouds = procedural_clouds(px, pz)
-    glEnable(GL_BLEND)
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
-    glColor4f(1.0,1.0,1.0,0.8)
-    for (cx,cy,cz,size) in clouds:
-        dist = math.sqrt((cx - px)**2 + (cz - pz)**2)
-        if dist < CHUNK_SIZE*(RENDER_DISTANCE+1):
-            glBegin(GL_QUADS)
-            glVertex3f(cx - size, cy, cz - size)
-            glVertex3f(cx + size, cy, cz - size)
-            glVertex3f(cx + size, cy, cz + size)
-            glVertex3f(cx - size, cy, cz + size)
-            glEnd()
-    glDisable(GL_BLEND)
-
-def draw_health_bar(w,h):
-    bar_width = 200
-    bar_height = 20
-    x = 10
-    y = 40
-    health_ratio = player_health / float(PLAYER_MAX_HEALTH)
-    glColor3f(0.2,0.2,0.2)
-    glBegin(GL_QUADS)
-    glVertex2f(x, y)
-    glVertex2f(x+bar_width, y)
-    glVertex2f(x+bar_width, y+bar_height)
-    glVertex2f(x, y+bar_height)
-    glEnd()
-    glColor3f(1.0 - health_ratio,health_ratio,0.0)
-    glBegin(GL_QUADS)
-    glVertex2f(x, y)
-    glVertex2f(x+bar_width*health_ratio, y)
-    glVertex2f(x+bar_width*health_ratio, y+bar_height)
-    glVertex2f(x, y+bar_height)
-    glEnd()
-
 def line_block_intersect(x1,y1,z1,x2,y2,z2,bx,by,bz):
     tmin = 0.0
     tmax = 1.0
@@ -320,7 +264,6 @@ def line_block_intersect(x1,y1,z1,x2,y2,z2,bx,by,bz):
     ix = x1 + dx*tmin
     iy = y1 + dy*tmin
     iz = z1 + dz*tmin
-
     eps=1e-5
     normal = [0,0,0]
     if abs(ix - bx) < eps:
@@ -350,6 +293,8 @@ def main():
     snd_rocketlauncher = pygame.mixer.Sound("assets/rocketlauncher.flac")
     snd_shotgun = pygame.mixer.Sound("assets/shotgun.flac")
     snd_ammo = pygame.mixer.Sound("assets/ammo.flac")
+
+    entities.enemy_pistol_sound = snd_pistol
 
     font = pygame.font.SysFont("Arial", 18)
 
@@ -392,10 +337,26 @@ def main():
     bullets = []
     rockets = []
     explosions = []
-    bullet_last_positions = {}
+    bullet_last_positions = []
 
     running = True
     random.seed()
+
+    from config import all_enemies
+
+    def play_sound_with_distance(sound, sx, sy, sz):
+        if px is None:
+            sound.set_volume(1.0)
+            sound.play()
+            return
+        dist = math.sqrt((sx - px)**2 + (sy - py)**2 + (sz - pz)**2)
+        if dist > 32.0:
+            vol = 0.0
+        else:
+            vol = 1.0 - (dist/32.0)
+        sound.set_volume(vol)
+        if vol > 0.0:
+            sound.play()
 
     while running:
         dt = clock.tick()
@@ -414,7 +375,6 @@ def main():
             px, py, pz = start_px, start_py, start_pz
 
         keys = pygame.key.get_pressed()
-
         current_time = time.time()
 
         for event in pygame.event.get():
@@ -476,12 +436,12 @@ def main():
                             dz = -math.cos(rad_y)*math.cos(rad_x)
 
                             if wid=="pistol":
-                                snd_pistol.play()
+                                play_sound_with_distance(snd_pistol, px, py, pz)
                                 b = Bullet(start_x, start_y, start_z, dx,dy,dz, radius=0.05)
                                 bullets.append(b)
-                                bullet_last_positions[id(b)] = (start_x, start_y, start_z)
+                                bullet_last_positions.append((id(b),start_x,start_y,start_z))
                             elif wid=="shotgun":
-                                snd_shotgun.play()
+                                play_sound_with_distance(snd_shotgun, px, py, pz)
                                 for i in range(8):
                                     angle_h = random.uniform(-10,10)
                                     angle_v = random.uniform(-2,2)
@@ -492,9 +452,9 @@ def main():
                                     dz2 = -math.cos(rad_y_off)*math.cos(rad_x_off)
                                     b = Bullet(start_x, start_y, start_z, dx2,dy2,dz2, radius=0.05)
                                     bullets.append(b)
-                                    bullet_last_positions[id(b)] = (start_x, start_y, start_z)
+                                    bullet_last_positions.append((id(b),start_x,start_y,start_z))
                             elif wid=="rocket":
-                                snd_rocketlauncher.play()
+                                play_sound_with_distance(snd_rocketlauncher, px, py, pz)
                                 r = Rocket(start_x,start_y,start_z, dx,dy,dz)
                                 rockets.append(r)
 
@@ -522,26 +482,45 @@ def main():
             update_loaded_chunks(px, pz, world, loaded_chunks, chunk_vbos)
 
             new_bullets = []
+            bullet_last_positions_new = []
+            from config import all_enemies
             for b in bullets:
-                prev_x, prev_y, prev_z = bullet_last_positions[id(b)]
+                prev_pos = None
+                for (bid,ix,iy,iz) in bullet_last_positions:
+                    if bid == id(b):
+                        prev_pos = (ix,iy,iz)
+                        break
                 alive = b.update(dt_s)
                 if not alive:
-                    del bullet_last_positions[id(b)]
                     continue
                 bx = int(math.floor(b.x))
                 by = int(math.floor(b.y))
                 bz = int(math.floor(b.z))
                 if (bx,by,bz) in world:
                     snd_hit.play()
-                    res = line_block_intersect(prev_x,prev_y,prev_z,b.x,b.y,b.z,bx,by,bz)
-                    if res:
-                        ix,iy,iz, nx,ny,nz = res
-                        bulletmarks.add_bullet_mark(bx, by, bz, ix, iy, iz, nx, ny, nz)
-                    del bullet_last_positions[id(b)]
+                    if prev_pos is not None:
+                        res = line_block_intersect(prev_pos[0],prev_pos[1],prev_pos[2],b.x,b.y,b.z,bx,by,bz)
+                        if res:
+                            ix,iy,iz, nx,ny,nz = res
+                            bulletmarks.add_bullet_mark(bx, by, bz, ix, iy, iz, nx, ny, nz)
                 else:
-                    new_bullets.append(b)
-                    bullet_last_positions[id(b)] = (b.x,b.y,b.z)
+                    for e in all_enemies:
+                        if b.owner == e:
+                            continue
+                        edx = e.x - b.x
+                        edy = (e.y+0.5) - b.y
+                        edz = e.z - b.z
+                        dist = math.sqrt(edx*edx+edy*edy+edz*edz)
+                        if dist < 0.5:
+                            e.take_damage(DAMAGE_BULLET)
+                            alive = False
+                            break
+                    if alive:
+                        new_bullets.append(b)
+                        bullet_last_positions_new.append((id(b),b.x,b.y,b.z))
+
             bullets = new_bullets
+            bullet_last_positions = bullet_last_positions_new
 
             new_rockets = []
             for r in rockets:
@@ -554,6 +533,14 @@ def main():
             rockets = new_rockets
 
             explosions = [e for e in explosions if e.update(dt_s)]
+
+            new_enemies = []
+            player_pos = (px, py, pz)
+            for e in all_enemies:
+                alive = e.update(dt_s, player_pos, world, bullets)
+                if e.health > 0 and alive:
+                    new_enemies.append(e)
+            all_enemies[:] = new_enemies
 
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 
@@ -568,6 +555,10 @@ def main():
             glMatrixMode(GL_MODELVIEW)
             glLoadIdentity()
             gluLookAt(px, eye_y, pz, px+dx, eye_y+dy, pz+dz, 0,1,0)
+
+            projection = glGetDoublev(GL_PROJECTION_MATRIX)
+            modelview = glGetDoublev(GL_MODELVIEW_MATRIX)
+            viewport = glGetIntegerv(GL_VIEWPORT)
 
             draw_clouds(px, py, pz, rx, ry)
 
@@ -585,9 +576,38 @@ def main():
 
             draw_bullet_marks()
 
-            from config import all_pickups
             for p in all_pickups:
                 p.draw()
+
+            for en in all_enemies:
+                en.draw()
+
+            # Check enemy HP bars
+            enemy_positions_2d = []
+            w, h = screen.get_size()
+
+            # Compute forward vector of camera for visibility check
+            cam_rad_x = math.radians(rx)
+            cam_rad_y = math.radians(ry)
+            fdx = math.sin(cam_rad_y)*math.cos(cam_rad_x)
+            fdy = math.sin(cam_rad_x)
+            fdz = -math.cos(cam_rad_y)*math.cos(cam_rad_x)
+
+            for en in all_enemies:
+                dist = math.sqrt((en.x - px)**2 + (en.y - py)**2 + (en.z - pz)**2)
+                if dist <= 20.0 and en.health > 0:
+                    exv = en.x - px
+                    eyv = (en.y+1.2) - eye_y
+                    ezv = en.z - pz
+                    dot = exv*fdx + eyv*fdy + ezv*fdz
+                    if dot < 0:
+                        continue
+                    wx, wy, wz = gluProject(en.x, en.y+1.2, en.z, modelview, projection, viewport)
+                    if wz < 0.0 or wz > 1.0:
+                        continue
+                    if wx < 0 or wx > w or wy < 0 or wy > h:
+                        continue
+                    enemy_positions_2d.append((wx, h - wy, en.health, dist))
 
         glMatrixMode(GL_PROJECTION)
         glPushMatrix()
@@ -600,7 +620,8 @@ def main():
 
         glDisable(GL_DEPTH_TEST)
         glTranslatef(0.0, -0.2, -0.5)
-        draw_simple_weapon(current_weapon_id())
+        if px is not None:
+            draw_simple_weapon(current_weapon_id())
 
         glEnable(GL_DEPTH_TEST)
         glPopMatrix()
@@ -621,6 +642,7 @@ def main():
         glColor3f(1,1,1)
         cx = w//2
         cy = h//2
+        # Crosshair
         glBegin(GL_LINES)
         glVertex2f(cx - 10, cy)
         glVertex2f(cx + 10, cy)
@@ -633,6 +655,26 @@ def main():
             wname = current_weapon_name()
             wammo = current_weapon_ammo()
             draw_text_2d_cached(font, f"Weapon: {wname}  Ammo: {wammo}", 10, h-30)
+            def draw_health_bar(w,h):
+                bar_width = 200
+                bar_height = 20
+                x = 10
+                y = 40
+                health_ratio = player_health / float(PLAYER_MAX_HEALTH)
+                glColor3f(0.2,0.2,0.2)
+                glBegin(GL_QUADS)
+                glVertex2f(x, y)
+                glVertex2f(x+bar_width, y)
+                glVertex2f(x+bar_width, y+bar_height)
+                glVertex2f(x, y+bar_height)
+                glEnd()
+                glColor3f(1.0 - health_ratio,health_ratio,0.0)
+                glBegin(GL_QUADS)
+                glVertex2f(x, y)
+                glVertex2f(x+bar_width*health_ratio, y)
+                glVertex2f(x+bar_width*health_ratio, y+bar_height)
+                glVertex2f(x, y+bar_height)
+                glEnd()
             draw_health_bar(w,h)
 
             icon_y = h-70
@@ -657,6 +699,38 @@ def main():
                     glVertex2f(icon_x, icon_y+size)
                     glEnd()
                 icon_x += size+5
+
+            for (ex, ey, ehp, dist) in enemy_positions_2d:
+                bar_width = 30
+                bar_height = 4
+                hp_ratio = ehp/50.0
+                bx = ex - bar_width/2
+                by = ey - 2  # even lower
+
+                glColor3f(0,0,0)
+                glBegin(GL_LINE_LOOP)
+                glVertex2f(bx, by)
+                glVertex2f(bx+bar_width, by)
+                glVertex2f(bx+bar_width, by+bar_height)
+                glVertex2f(bx, by+bar_height)
+                glEnd()
+
+                glColor3f(0.2,0.2,0.2)
+                glBegin(GL_QUADS)
+                glVertex2f(bx, by)
+                glVertex2f(bx+bar_width, by)
+                glVertex2f(bx+bar_width, by+bar_height)
+                glVertex2f(bx, by+bar_height)
+                glEnd()
+
+                glColor3f(1.0 - hp_ratio, hp_ratio, 0.0)
+                glBegin(GL_QUADS)
+                glVertex2f(bx, by)
+                glVertex2f(bx+bar_width*hp_ratio, by)
+                glVertex2f(bx+bar_width*hp_ratio, by+bar_height)
+                glVertex2f(bx, by+bar_height)
+                glEnd()
+
         else:
             draw_text_2d_cached(font, "Loading chunks...", w//2 - 50, h//2)
 

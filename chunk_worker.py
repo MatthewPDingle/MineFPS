@@ -2,7 +2,7 @@
 import threading, queue, math, random, time
 from config import CHUNK_SIZE, GROUND_LEVEL, chunk_coords_from_world
 from render import build_chunk_vertex_data
-from entities import AmmoPickup
+from entities import AmmoPickup, RobotDog
 
 generation_queue = queue.Queue()
 generated_chunks_queue = queue.Queue()
@@ -36,9 +36,6 @@ def generate_chunk_data(cx, cz):
     pickups = []
     pickup_types = ["pistol", "shotgun", "rocket"]
     num_pickups = random.randint(0,2)
-    # Increase baseline Y to avoid clipping by placing them higher:
-    # Previously: py = GROUND_LEVEL + 1.0
-    # Now raise it more, say to GROUND_LEVEL + 1.5
     for _ in range(num_pickups):
         px = base_x + random.randint(0, CHUNK_SIZE-1) + 0.5
         pz = base_z + random.randint(0, CHUNK_SIZE-1) + 0.5
@@ -47,7 +44,16 @@ def generate_chunk_data(cx, cz):
         p = AmmoPickup(px, py, pz, ammo_type, (cx, cz))
         pickups.append(p)
 
-    return chunk_data, pickups
+    enemies = []
+    # 25% spawn chance:
+    if random.random() < 0.25:
+        ex = base_x + random.randint(0, CHUNK_SIZE-1) + 0.5
+        ez = base_z + random.randint(0, CHUNK_SIZE-1) + 0.5
+        ey = GROUND_LEVEL + 1.0
+        e = RobotDog(ex, ey, ez, (cx, cz))
+        enemies.append(e)
+
+    return chunk_data, pickups, enemies
 
 def chunk_generation_worker():
     while True:
@@ -56,9 +62,9 @@ def chunk_generation_worker():
             break
         action, cx, cz = task
         if action == "loadgen":
-            chunk_data, pickups = generate_chunk_data(cx, cz)
+            chunk_data, pickups, enemies = generate_chunk_data(cx, cz)
             vertex_data = build_chunk_vertex_data(chunk_data, cx, cz)
-            generated_chunks_queue.put((cx, cz, chunk_data, vertex_data, pickups))
+            generated_chunks_queue.put((cx, cz, chunk_data, vertex_data, pickups, enemies))
 
 def start_chunk_worker():
     t = threading.Thread(target=chunk_generation_worker, daemon=True)

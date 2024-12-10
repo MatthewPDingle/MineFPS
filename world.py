@@ -1,6 +1,6 @@
 # world.py
 import math
-from config import CHUNK_SIZE, GROUND_LEVEL, chunk_update_queue, LOADS_PER_FRAME, all_pickups, chunk_coords_from_world
+from config import CHUNK_SIZE, GROUND_LEVEL, chunk_update_queue, LOADS_PER_FRAME, all_pickups, all_enemies, chunk_coords_from_world
 from OpenGL.GL import *
 from chunk_worker import generated_chunks_queue
 from render import create_vbo_from_vertex_data, build_chunk_vertex_data
@@ -20,15 +20,23 @@ def unload_chunk_now(cx, cz, world, chunk_vbos):
         bulletmarks.remove_bullet_marks_for_block(coords)
         del world[coords]
 
-    new_list = []
+    new_pickups = []
     for p in all_pickups:
         pcx, pcz = p.chunk_coords
         if pcx == cx and pcz == cz:
-            # remove this pickup (unloaded)
             pass
         else:
-            new_list.append(p)
-    all_pickups[:] = new_list
+            new_pickups.append(p)
+    all_pickups[:] = new_pickups
+
+    new_enemies = []
+    for e in all_enemies:
+        ecx, ecz = e.chunk_coords
+        if ecx == cx and ecz == cz:
+            pass
+        else:
+            new_enemies.append(e)
+    all_enemies[:] = new_enemies
 
     if (cx, cz) in chunk_vbos:
         vbo_id, face_count, edge_count = chunk_vbos[(cx, cz)]
@@ -45,11 +53,13 @@ def remove_block(bx, by, bz, world, chunk_vbos):
 def process_chunk_updates(world, chunk_vbos, generated_chunks_queue):
     processed = 0
     while not generated_chunks_queue.empty() and processed < LOADS_PER_FRAME:
-        cx, cz, chunk_data, (face_data, edge_data), pickups = generated_chunks_queue.get_nowait()
+        cx, cz, chunk_data, (face_data, edge_data), pickups, enemies = generated_chunks_queue.get_nowait()
         unload_chunk_now(cx, cz, world, chunk_vbos)
         world.update(chunk_data)
         for p in pickups:
             all_pickups.append(p)
+        for e in enemies:
+            all_enemies.append(e)
         vbo_id, face_count, edge_count = create_vbo_from_vertex_data(face_data, edge_data)
         chunk_vbos[(cx, cz)] = (vbo_id, face_count, edge_count)
         processed += 1
@@ -103,3 +113,21 @@ def all_initial_chunks_loaded(loaded_chunks, chunk_vbos):
         if cpos not in chunk_vbos:
             return False
     return True
+
+def line_block_intersect_3d(x1,y1,z1,x2,y2,z2,world):
+    steps = int(max(abs(x2-x1), abs(y2-y1), abs(z2-z1))*2)
+    if steps < 1:
+        steps = 1
+    dx = (x2-x1)/steps
+    dy = (y2-y1)/steps
+    dz = (z2-z1)/steps
+    for i in range(steps+1):
+        cx = x1+dx*i
+        cy = y1+dy*i
+        cz = z1+dz*i
+        bx = int(math.floor(cx))
+        by = int(math.floor(cy))
+        bz = int(math.floor(cz))
+        if (bx,by,bz) in world and not (i==steps):
+            return True
+    return None
