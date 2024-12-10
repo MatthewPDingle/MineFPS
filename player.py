@@ -1,9 +1,7 @@
 # player.py
 import math
 import pygame
-from config import PLAYER_COLLISION_RADIUS, PLAYER_HEIGHT, MOVE_SPEED, JUMP_SPEED, GRAVITY
-from config import PLAYER_EYE_HEIGHT, MOUSE_SENSITIVITY
-from pygame.locals import *
+from config import PLAYER_COLLISION_RADIUS, PLAYER_HEIGHT, MOVE_SPEED, JUMP_SPEED, GRAVITY, PLAYER_EYE_HEIGHT, MOUSE_SENSITIVITY, all_pickups
 
 def check_collision(px, py, pz, world):
     min_x = int(math.floor(px - PLAYER_COLLISION_RADIUS))
@@ -41,7 +39,7 @@ def move_player(forward, strafe, jump, px, py, pz, vy, on_ground, rx, ry, world,
     rdz = math.sin(rad_y)
 
     keys = pygame.key.get_pressed()
-    speed_mult = 2.0 if (keys[K_LSHIFT] or keys[K_RSHIFT]) else 1.0
+    speed_mult = 2.0 if (keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT]) else 1.0
     speed = MOVE_SPEED * speed_mult * dt_s
 
     vx = (forward * fdx + strafe * rdx)*speed
@@ -59,7 +57,6 @@ def apply_gravity(px, py, pz, vy, on_ground, world, dt_s):
     new_py = py + vy*dt_s
 
     if check_collision(px, new_py, pz, world):
-        # Hit something (likely ground)
         vy = 0
         on_ground = True
     else:
@@ -68,5 +65,18 @@ def apply_gravity(px, py, pz, vy, on_ground, world, dt_s):
         on_ground = (foot_block in world)
     return px, py, pz, vy, on_ground
 
-def player_pickup(px, py, pz, inventory):
-    pass
+def player_pickup(px, py, pz, inventory, snd_ammo):
+    new_list = []
+    picked_any = False
+    for p in all_pickups:
+        dist = p.distance_to(px, py, pz)
+        if dist < 1.0:
+            amt = p.get_amount()
+            wid = p.ammo_type
+            inventory[wid]["ammo"] += amt
+            picked_any = True
+        else:
+            new_list.append(p)
+    all_pickups[:] = new_list
+    if picked_any:
+        snd_ammo.play()

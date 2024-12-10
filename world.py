@@ -1,6 +1,6 @@
 # world.py
 import math
-from config import CHUNK_SIZE, GROUND_LEVEL, chunk_update_queue, LOADS_PER_FRAME
+from config import CHUNK_SIZE, GROUND_LEVEL, chunk_update_queue, LOADS_PER_FRAME, all_pickups, chunk_coords_from_world
 from OpenGL.GL import *
 from chunk_worker import generated_chunks_queue
 from render import create_vbo_from_vertex_data, build_chunk_vertex_data
@@ -8,11 +8,6 @@ import bulletmarks
 
 def create_initial_world():
     return {}
-
-def chunk_coords_from_world(x, z):
-    cx = math.floor(x / CHUNK_SIZE)
-    cz = math.floor(z / CHUNK_SIZE)
-    return cx, cz
 
 def unload_chunk_now(cx, cz, world, chunk_vbos):
     base_x = cx * CHUNK_SIZE
@@ -24,6 +19,17 @@ def unload_chunk_now(cx, cz, world, chunk_vbos):
     for coords in to_remove:
         bulletmarks.remove_bullet_marks_for_block(coords)
         del world[coords]
+
+    new_list = []
+    for p in all_pickups:
+        pcx, pcz = p.chunk_coords
+        if pcx == cx and pcz == cz:
+            # remove this pickup (unloaded)
+            pass
+        else:
+            new_list.append(p)
+    all_pickups[:] = new_list
+
     if (cx, cz) in chunk_vbos:
         vbo_id, face_count, edge_count = chunk_vbos[(cx, cz)]
         glDeleteBuffers(1, [vbo_id])
@@ -39,9 +45,11 @@ def remove_block(bx, by, bz, world, chunk_vbos):
 def process_chunk_updates(world, chunk_vbos, generated_chunks_queue):
     processed = 0
     while not generated_chunks_queue.empty() and processed < LOADS_PER_FRAME:
-        cx, cz, chunk_data, (face_data, edge_data) = generated_chunks_queue.get_nowait()
+        cx, cz, chunk_data, (face_data, edge_data), pickups = generated_chunks_queue.get_nowait()
         unload_chunk_now(cx, cz, world, chunk_vbos)
         world.update(chunk_data)
+        for p in pickups:
+            all_pickups.append(p)
         vbo_id, face_count, edge_count = create_vbo_from_vertex_data(face_data, edge_data)
         chunk_vbos[(cx, cz)] = (vbo_id, face_count, edge_count)
         processed += 1

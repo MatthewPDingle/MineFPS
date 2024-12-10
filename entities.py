@@ -1,13 +1,11 @@
 # entities.py
-import math, random
+import math, random, time
 from OpenGL.GL import *
 from OpenGL.GLU import *
-from config import PLAYER_EYE_HEIGHT, chunk_update_queue
-from world import chunk_coords_from_world
+from config import PLAYER_EYE_HEIGHT, chunk_update_queue, chunk_coords_from_world
 import bulletmarks
 
 class Bullet:
-    # Using real time steps, speed was originally 0.5/frame @60fps = 30 units/s
     def __init__(self, x, y, z, dx, dy, dz, radius=0.2):
         self.x = x
         self.y = y
@@ -35,7 +33,6 @@ class Bullet:
         glPopMatrix()
 
 class Rocket:
-    # Originally 0.3/frame @60fps=18 units/s
     def __init__(self, x, y, z, dx, dy, dz):
         self.x = x
         self.y = y
@@ -135,8 +132,6 @@ class Rocket:
         glPopMatrix()
 
 class Explosion:
-    # Originally particles life reduced by 0.02/frame → 1.2/s
-    # Speeds 0.1-0.3/frame → 6-18 units/s
     def __init__(self, x, y, z):
         self.x = x
         self.y = y
@@ -201,3 +196,83 @@ class Explosion:
                 glColor4f(1.0,0.5,0.0,p["life"])
                 glVertex3f(p["x"],p["y"],p["z"])
         glEnd()
+
+class AmmoPickup:
+    # Changed colors to match the weapon colors:
+    # pistol: light gray (0.8,0.8,0.8)
+    # shotgun: dark gray (0.3,0.3,0.3)
+    # rocket: orange (0.8,0.4,0.0)
+    ammo_info = {
+        "pistol": {"amount":50, "color":(0.8,0.8,0.8)},
+        "shotgun": {"amount":10, "color":(0.3,0.3,0.3)},
+        "rocket": {"amount":5, "color":(0.8,0.4,0.0)}
+    }
+
+    def __init__(self, x, y, z, ammo_type, chunk_coords):
+        self.x = x
+        self.y = y
+        self.z = z
+        self.ammo_type = ammo_type
+        self.chunk_coords = chunk_coords
+        self.spawn_time = time.time()
+
+    def get_amount(self):
+        return self.ammo_info[self.ammo_type]["amount"]
+
+    def update(self, dt_s):
+        pass
+
+    def draw(self):
+        elapsed = time.time() - self.spawn_time
+        # Double bob speed from previous version: use 4.0 * elapsed
+        bob = math.sin(elapsed*4.0)*0.25
+        c = self.ammo_info[self.ammo_type]["color"]
+        px, py, pz = self.x, self.y+bob, self.z
+        hw = 0.2
+        hh = 0.1  # half height
+        hl = 0.2
+
+        glColor3f(*c)
+        glBegin(GL_QUADS)
+        v = [
+            (px - hw, py - hh, pz - hl),
+            (px + hw, py - hh, pz - hl),
+            (px + hw, py + hh, pz - hl),
+            (px - hw, py + hh, pz - hl),
+
+            (px - hw, py - hh, pz + hl),
+            (px - hw, py + hh, pz + hl),
+            (px + hw, py + hh, pz + hl),
+            (px + hw, py - hh, pz + hl),
+        ]
+
+        faces = [
+            (0,1,2,3),
+            (4,5,6,7),
+            (0,3,5,4),
+            (1,7,6,2),
+            (3,2,6,5),
+            (0,4,7,1),
+        ]
+        for f in faces:
+            for idx in f:
+                glVertex3f(*v[idx])
+        glEnd()
+
+        glColor3f(0,0,0)
+        edges = [
+            (0,1),(1,2),(2,3),(3,0),
+            (4,5),(5,6),(6,7),(7,4),
+            (0,4),(1,7),(2,6),(3,5)
+        ]
+        glBegin(GL_LINES)
+        for (a,b) in edges:
+            glVertex3f(*v[a])
+            glVertex3f(*v[b])
+        glEnd()
+
+    def distance_to(self, px, py, pz):
+        dx = self.x - px
+        dy = (self.y) - py
+        dz = self.z - pz
+        return math.sqrt(dx*dx + dy*dy + dz*dz)

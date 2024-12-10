@@ -24,9 +24,9 @@ DAMAGE_ROCKET_PARTICLE = 4
 
 current_weapon_index = 0
 inventory = {
-    "pistol": {"ammo":100, "owned":True},
-    "shotgun": {"ammo":100, "owned":True},
-    "rocket": {"ammo":100, "owned":True}
+    "pistol": {"ammo":50, "owned":True},
+    "shotgun": {"ammo":10, "owned":True},
+    "rocket": {"ammo":5, "owned":True}
 }
 
 def get_weapon_color(wid):
@@ -227,7 +227,7 @@ def draw_bullet_marks():
     glDisable(GL_POLYGON_OFFSET_FILL)
 
 def procedural_clouds(px, pz, radius=RENDER_DISTANCE):
-    from world import chunk_coords_from_world
+    from config import chunk_coords_from_world
     pcx, pcz = chunk_coords_from_world(px, pz)
     clouds = []
     cloud_rand = random.Random() 
@@ -334,6 +334,7 @@ def main():
     snd_pistol = pygame.mixer.Sound("assets/pistol.flac")
     snd_rocketlauncher = pygame.mixer.Sound("assets/rocketlauncher.flac")
     snd_shotgun = pygame.mixer.Sound("assets/shotgun.flac")
+    snd_ammo = pygame.mixer.Sound("assets/ammo.flac")  # new ammo pickup sound
 
     font = pygame.font.SysFont("Arial", 18)
 
@@ -382,7 +383,7 @@ def main():
     random.seed()
 
     while running:
-        dt = clock.tick()  # No frame cap
+        dt = clock.tick()
         dt_s = dt/1000.0
 
         fps = 1000.0/dt if dt>0 else 0.0
@@ -494,7 +495,7 @@ def main():
             jump = keys[K_SPACE]
             px, py, pz, vy, on_ground = move_player(forward, strafe, jump, px, py, pz, vy, on_ground, rx, ry, world, dt_s)
             px, py, pz, vy, on_ground = apply_gravity(px, py, pz, vy, on_ground, world, dt_s)
-            player_pickup(px, py, pz, inventory)
+            player_pickup(px, py, pz, inventory, snd_ammo)  # pass snd_ammo here
             update_loaded_chunks(px, pz, world, loaded_chunks, chunk_vbos)
 
             new_bullets = []
@@ -560,6 +561,10 @@ def main():
                 e.draw(px, py, pz, sphere_quad)
 
             draw_bullet_marks()
+
+            from config import all_pickups
+            for p in all_pickups:
+                p.draw()
 
         glMatrixMode(GL_PROJECTION)
         glPushMatrix()

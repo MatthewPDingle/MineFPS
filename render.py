@@ -74,7 +74,6 @@ def set_display_mode(fullscreen):
     return screen
 
 def build_chunk_vertex_data(chunk_data, cx, cz):
-    # Add edges back for visible faces
     def block_colors(val):
         if val == "leaf":
             return {
@@ -96,14 +95,8 @@ def build_chunk_vertex_data(chunk_data, cx, cz):
     edge_vertices = []
     size = 1.0
 
-    # Helper to add edges for a face
     def add_face_edges(ex,ey,ez, direction):
-        # direction: "top", "bottom", "north", "south", "west", "east"
-        # We'll add edges forming the outline of that face
-        # Using the same logic as before: each face is a square
-        # top/bottom share similar patterns, as do sides
         if direction == "top":
-            # top face is from (ex,ey+1,ez) to (ex+1,ey+1,ez+1)
             edge_vertices.extend([
                 (ex, ey+size, ez, 0,0,0),
                 (ex+size, ey+size, ez,0,0,0),
@@ -307,9 +300,7 @@ def render_chunk_vbo(vbo_id, face_vertex_count, edge_vertex_count):
     glVertexPointer(3, GL_FLOAT, stride, None)
     glColorPointer(3, GL_FLOAT, stride, ctypes.c_void_p(3*4))
 
-    # Draw faces
     glDrawArrays(GL_TRIANGLES, 0, face_vertex_count)
-    # Draw edges
     edge_start = face_vertex_count
     glDrawArrays(GL_LINES, edge_start, edge_vertex_count)
 
