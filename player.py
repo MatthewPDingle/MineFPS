@@ -33,7 +33,7 @@ def slide_movement(px, py, pz, vx, vz, world):
         px, pz = new_px, new_pz
     return px, pz
 
-def move_player(forward, strafe, jump, px, py, pz, vy, on_ground, rx, ry, world):
+def move_player(forward, strafe, jump, px, py, pz, vy, on_ground, rx, ry, world, dt_s):
     rad_y = math.radians(ry)
     fdx = math.sin(rad_y)
     fdz = -math.cos(rad_y)
@@ -42,7 +42,7 @@ def move_player(forward, strafe, jump, px, py, pz, vy, on_ground, rx, ry, world)
 
     keys = pygame.key.get_pressed()
     speed_mult = 2.0 if (keys[K_LSHIFT] or keys[K_RSHIFT]) else 1.0
-    speed = MOVE_SPEED * speed_mult
+    speed = MOVE_SPEED * speed_mult * dt_s
 
     vx = (forward * fdx + strafe * rdx)*speed
     vz = (forward * fdz + strafe * rdz)*speed
@@ -51,15 +51,15 @@ def move_player(forward, strafe, jump, px, py, pz, vy, on_ground, rx, ry, world)
 
     if jump and on_ground:
         vy = JUMP_SPEED
-        on_ground = False
 
     return px, py, pz, vy, on_ground
 
-def apply_gravity(px, py, pz, vy, on_ground, world):
-    vy -= GRAVITY
-    new_py = py + vy
+def apply_gravity(px, py, pz, vy, on_ground, world, dt_s):
+    vy -= GRAVITY * dt_s
+    new_py = py + vy*dt_s
 
     if check_collision(px, new_py, pz, world):
+        # Hit something (likely ground)
         vy = 0
         on_ground = True
     else:

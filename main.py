@@ -379,10 +379,12 @@ def main():
     bullet_last_positions = {}
 
     running = True
-    random.seed()  # ensure random is truly random
+    random.seed()
 
     while running:
-        dt = clock.tick(60)
+        dt = clock.tick()  # No frame cap
+        dt_s = dt/1000.0
+
         fps = 1000.0/dt if dt>0 else 0.0
 
         generation_tasks = [(a,cx,cz) for (a,cx,cz) in chunk_update_queue if a == "loadgen"]
@@ -458,7 +460,6 @@ def main():
                             bullet_last_positions[id(b)] = (start_x, start_y, start_z)
                         elif current_weapon_id()=="shotgun":
                             snd_shotgun.play()
-                            # random spread each shot
                             for i in range(8):
                                 angle_h = random.uniform(-10,10)
                                 angle_v = random.uniform(-2,2)
@@ -491,15 +492,15 @@ def main():
             forward = (keys[K_w] - keys[K_s])
             strafe = (keys[K_d] - keys[K_a])
             jump = keys[K_SPACE]
-            px, py, pz, vy, on_ground = move_player(forward, strafe, jump, px, py, pz, vy, on_ground, rx, ry, world)
-            px, py, pz, vy, on_ground = apply_gravity(px, py, pz, vy, on_ground, world)
+            px, py, pz, vy, on_ground = move_player(forward, strafe, jump, px, py, pz, vy, on_ground, rx, ry, world, dt_s)
+            px, py, pz, vy, on_ground = apply_gravity(px, py, pz, vy, on_ground, world, dt_s)
             player_pickup(px, py, pz, inventory)
             update_loaded_chunks(px, pz, world, loaded_chunks, chunk_vbos)
 
             new_bullets = []
             for b in bullets:
                 prev_x, prev_y, prev_z = bullet_last_positions[id(b)]
-                alive = b.update()
+                alive = b.update(dt_s)
                 if not alive:
                     del bullet_last_positions[id(b)]
                     continue
@@ -521,14 +522,14 @@ def main():
             new_rockets = []
             for r in rockets:
                 was_alive = r.alive
-                still_alive = r.update(world, chunk_vbos, explosions)
+                still_alive = r.update(world, chunk_vbos, explosions, dt_s)
                 if was_alive and not r.alive:
                     snd_explosion.play()
                 if still_alive:
                     new_rockets.append(r)
             rockets = new_rockets
 
-            explosions = [e for e in explosions if e.update()]
+            explosions = [e for e in explosions if e.update(dt_s)]
 
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 

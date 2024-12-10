@@ -7,6 +7,7 @@ from world import chunk_coords_from_world
 import bulletmarks
 
 class Bullet:
+    # Using real time steps, speed was originally 0.5/frame @60fps = 30 units/s
     def __init__(self, x, y, z, dx, dy, dz, radius=0.2):
         self.x = x
         self.y = y
@@ -14,16 +15,16 @@ class Bullet:
         self.dx = dx
         self.dy = dy
         self.dz = dz
-        self.speed = 0.5
+        self.speed = 30.0
         self.distance_traveled = 0
         self.max_distance = 20.0
         self.radius = radius
 
-    def update(self):
-        self.x += self.dx * self.speed
-        self.y += self.dy * self.speed
-        self.z += self.dz * self.speed
-        self.distance_traveled += self.speed
+    def update(self, dt_s):
+        self.x += self.dx * self.speed * dt_s
+        self.y += self.dy * self.speed * dt_s
+        self.z += self.dz * self.speed * dt_s
+        self.distance_traveled += self.speed * dt_s
         return self.distance_traveled < self.max_distance
 
     def draw(self, sphere_quad):
@@ -34,6 +35,7 @@ class Bullet:
         glPopMatrix()
 
 class Rocket:
+    # Originally 0.3/frame @60fps=18 units/s
     def __init__(self, x, y, z, dx, dy, dz):
         self.x = x
         self.y = y
@@ -41,19 +43,19 @@ class Rocket:
         self.dx = dx
         self.dy = dy
         self.dz = dz
-        self.speed = 0.3
+        self.speed = 18.0
         self.distance_traveled = 0
         self.max_distance = 50.0
         self.alive = True
         self.blast_radius = 3
 
-    def update(self, world, chunk_lists, explosions):
+    def update(self, world, chunk_lists, explosions, dt_s):
         if not self.alive:
             return False
-        self.x += self.dx * self.speed
-        self.y += self.dy * self.speed
-        self.z += self.dz * self.speed
-        self.distance_traveled += self.speed
+        self.x += self.dx * self.speed * dt_s
+        self.y += self.dy * self.speed * dt_s
+        self.z += self.dz * self.speed * dt_s
+        self.distance_traveled += self.speed * dt_s
         if self.distance_traveled > self.max_distance:
             self.alive = False
             return False
@@ -133,6 +135,8 @@ class Rocket:
         glPopMatrix()
 
 class Explosion:
+    # Originally particles life reduced by 0.02/frame → 1.2/s
+    # Speeds 0.1-0.3/frame → 6-18 units/s
     def __init__(self, x, y, z):
         self.x = x
         self.y = y
@@ -147,24 +151,25 @@ class Explosion:
                 dx/=length
                 dy/=length
                 dz/=length
-            speed = random.uniform(0.1,0.3)
+            speed = random.uniform(6,18)
             self.particles.append({"x":x,"y":y,"z":z,"dx":dx*speed,"dy":dy*speed,"dz":dz*speed,"life":1.0})
         self.alive = True
         self.fireball_life = 1.0
+        self.life_decay_per_sec = 1.2
 
-    def update(self):
+    def update(self, dt_s):
         if not self.alive:
             return False
         any_alive = False
         for p in self.particles:
             if p["life"]>0:
-                p["x"]+=p["dx"]
-                p["y"]+=p["dy"]
-                p["z"]+=p["dz"]
-                p["life"]-=0.02
+                p["x"]+=p["dx"]*dt_s
+                p["y"]+=p["dy"]*dt_s
+                p["z"]+=p["dz"]*dt_s
+                p["life"]-=self.life_decay_per_sec*dt_s
                 if p["life"]>0:
                     any_alive=True
-        self.fireball_life -= 0.02
+        self.fireball_life -= self.life_decay_per_sec*dt_s
         if self.fireball_life < 0:
             self.fireball_life = 0
 
