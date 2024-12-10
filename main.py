@@ -29,6 +29,21 @@ inventory = {
     "rocket": {"ammo":5, "owned":True}
 }
 
+# Add fire rate control
+# pistol: no delay needed (can fire as fast as you can click)
+# shotgun: 0.5s minimum delay
+# rocket: 1.0s minimum delay
+weapon_fire_cooldown = {
+    "pistol": 0.0,
+    "shotgun": 0.5,
+    "rocket": 1.0
+}
+last_fire_time = {
+    "pistol": 0.0,
+    "shotgun": 0.0,
+    "rocket": 0.0
+}
+
 def get_weapon_color(wid):
     CUSTOM_WEAPON_COLORS = {
         "pistol": (0.8,0.8,0.8),
@@ -334,7 +349,7 @@ def main():
     snd_pistol = pygame.mixer.Sound("assets/pistol.flac")
     snd_rocketlauncher = pygame.mixer.Sound("assets/rocketlauncher.flac")
     snd_shotgun = pygame.mixer.Sound("assets/shotgun.flac")
-    snd_ammo = pygame.mixer.Sound("assets/ammo.flac")  # new ammo pickup sound
+    snd_ammo = pygame.mixer.Sound("assets/ammo.flac")
 
     font = pygame.font.SysFont("Arial", 18)
 
@@ -400,6 +415,8 @@ def main():
 
         keys = pygame.key.get_pressed()
 
+        current_time = time.time()
+
         for event in pygame.event.get():
             if event.type == QUIT:
                 running=False
@@ -443,39 +460,45 @@ def main():
                 if rx < -89:
                     rx = -89
             elif event.type == MOUSEBUTTONDOWN:
-                if event.button == 1:
-                    if px is not None and inventory[current_weapon_id()]["owned"] and inventory[current_weapon_id()]["ammo"]>0:
-                        inventory[current_weapon_id()]["ammo"] -= 1
-                        start_x = px
-                        start_y = py + PLAYER_EYE_HEIGHT
-                        start_z = pz
-                        rad_x = math.radians(rx)
-                        rad_y = math.radians(ry)
-                        dx = math.sin(rad_y)*math.cos(rad_x)
-                        dy = math.sin(rad_x)
-                        dz = -math.cos(rad_y)*math.cos(rad_x)
-                        if current_weapon_id()=="pistol":
-                            snd_pistol.play()
-                            b = Bullet(start_x, start_y, start_z, dx,dy,dz, radius=0.05)
-                            bullets.append(b)
-                            bullet_last_positions[id(b)] = (start_x, start_y, start_z)
-                        elif current_weapon_id()=="shotgun":
-                            snd_shotgun.play()
-                            for i in range(8):
-                                angle_h = random.uniform(-10,10)
-                                angle_v = random.uniform(-2,2)
-                                rad_y_off = math.radians(ry+angle_h)
-                                rad_x_off = math.radians(rx+angle_v)
-                                dx2 = math.sin(rad_y_off)*math.cos(rad_x_off)
-                                dy2 = math.sin(rad_x_off)
-                                dz2 = -math.cos(rad_y_off)*math.cos(rad_x_off)
-                                b = Bullet(start_x, start_y, start_z, dx2,dy2,dz2, radius=0.05)
+                if event.button == 1 and px is not None:
+                    wid = current_weapon_id()
+                    cooldown = weapon_fire_cooldown[wid]
+                    if (current_time - last_fire_time[wid]) >= cooldown:
+                        if inventory[wid]["owned"] and inventory[wid]["ammo"]>0:
+                            inventory[wid]["ammo"] -= 1
+                            start_x = px
+                            start_y = py + PLAYER_EYE_HEIGHT
+                            start_z = pz
+                            rad_x = math.radians(rx)
+                            rad_y = math.radians(ry)
+                            dx = math.sin(rad_y)*math.cos(rad_x)
+                            dy = math.sin(rad_x)
+                            dz = -math.cos(rad_y)*math.cos(rad_x)
+
+                            if wid=="pistol":
+                                snd_pistol.play()
+                                b = Bullet(start_x, start_y, start_z, dx,dy,dz, radius=0.05)
                                 bullets.append(b)
                                 bullet_last_positions[id(b)] = (start_x, start_y, start_z)
-                        elif current_weapon_id()=="rocket":
-                            snd_rocketlauncher.play()
-                            r = Rocket(start_x,start_y,start_z, dx,dy,dz)
-                            rockets.append(r)
+                            elif wid=="shotgun":
+                                snd_shotgun.play()
+                                for i in range(8):
+                                    angle_h = random.uniform(-10,10)
+                                    angle_v = random.uniform(-2,2)
+                                    rad_y_off = math.radians(ry+angle_h)
+                                    rad_x_off = math.radians(rx+angle_v)
+                                    dx2 = math.sin(rad_y_off)*math.cos(rad_x_off)
+                                    dy2 = math.sin(rad_x_off)
+                                    dz2 = -math.cos(rad_y_off)*math.cos(rad_x_off)
+                                    b = Bullet(start_x, start_y, start_z, dx2,dy2,dz2, radius=0.05)
+                                    bullets.append(b)
+                                    bullet_last_positions[id(b)] = (start_x, start_y, start_z)
+                            elif wid=="rocket":
+                                snd_rocketlauncher.play()
+                                r = Rocket(start_x,start_y,start_z, dx,dy,dz)
+                                rockets.append(r)
+
+                            last_fire_time[wid] = current_time
                 elif event.button == 4:
                     for i in range(len(WEAPONS)):
                         current_weapon_index = (current_weapon_index-1) % len(WEAPONS)
@@ -495,7 +518,7 @@ def main():
             jump = keys[K_SPACE]
             px, py, pz, vy, on_ground = move_player(forward, strafe, jump, px, py, pz, vy, on_ground, rx, ry, world, dt_s)
             px, py, pz, vy, on_ground = apply_gravity(px, py, pz, vy, on_ground, world, dt_s)
-            player_pickup(px, py, pz, inventory, snd_ammo)  # pass snd_ammo here
+            player_pickup(px, py, pz, inventory, snd_ammo)
             update_loaded_chunks(px, pz, world, loaded_chunks, chunk_vbos)
 
             new_bullets = []
