@@ -1,4 +1,5 @@
 # entities.py
+
 import math, random, time
 from OpenGL.GL import *
 from OpenGL.GLU import *
@@ -7,6 +8,138 @@ from render import draw_box
 import bulletmarks
 
 enemy_pistol_sound = None
+
+GRAVITY = 36.0
+
+DOG_WIDTH = 0.25
+DOG_LENGTH = 0.5
+DOG_HEIGHT = 1.1
+
+def get_robodog_boxes():
+    body_hw = 0.25
+    body_hh = 0.12
+    body_hl = 0.5
+    body_min = (-body_hw, 0.72 - body_hh, -body_hl)
+    body_max = ( body_hw, 0.72 + body_hh, body_hl)
+
+    head_hw = 0.12
+    head_hh = 0.12
+    head_hl = 0.12
+    # head center at z=0.5+0.12=0.62
+    head_min = (-head_hw, 0.9 - head_hh, 0.62 - head_hl)
+    head_max = ( head_hw, 0.9 + head_hh, 0.62 + head_hl)
+
+    leg_hw = 0.05
+    leg_hh = 0.3
+    leg_hl = 0.05
+    # front-left leg
+    fl_min = (-0.2 - leg_hw, 0.3 - leg_hh, 0.45 - leg_hl)
+    fl_max = (-0.2 + leg_hw, 0.3 + leg_hh, 0.45 + leg_hl)
+    # front-right leg
+    fr_min = (0.2 - leg_hw, 0.3 - leg_hh, 0.45 - leg_hl)
+    fr_max = (0.2 + leg_hw, 0.3 + leg_hh, 0.45 + leg_hl)
+    # back-left leg
+    bl_min = (-0.2 - leg_hw, 0.3 - leg_hh, -0.45 - leg_hl)
+    bl_max = (-0.2 + leg_hw, 0.3 + leg_hh, -0.45 + leg_hl)
+    # back-right leg
+    br_min = (0.2 - leg_hw, 0.3 - leg_hh, -0.45 - leg_hl)
+    br_max = (0.2 + leg_hw, 0.3 + leg_hh, -0.45 + leg_hl)
+
+    return [
+        (body_min, body_max),
+        (head_min, head_max),
+        (fl_min, fl_max),
+        (fr_min, fr_max),
+        (bl_min, bl_max),
+        (br_min, br_max)
+    ]
+
+def line_aabb_intersect(p1, p2, box_min, box_max):
+    tmin = 0.0
+    tmax = 1.0
+    d = (p2[0]-p1[0], p2[1]-p1[1], p2[2]-p1[2])
+    for i, (bmin,bmax) in enumerate(zip(box_min, box_max)):
+        start = p1[i]
+        delta = d[i]
+        if abs(delta)<1e-9:
+            # parallel
+            if start < bmin or start > bmax:
+                return False
+        else:
+            t0 = (bmin - start)/delta
+            t1 = (bmax - start)/delta
+            if t0>t1:
+                t0,t1=t1,t0
+            if t1<tmin or t0>tmax:
+                return False
+            tmin = max(tmin,t0)
+            tmax = min(tmax,t1)
+            if tmin>tmax:
+                return False
+    return True
+
+def bullet_or_rocket_hits_dog(old_pos, new_pos, dog_x, dog_y, dog_z, dog_yaw):
+    rel_p1 = (old_pos[0]-dog_x, old_pos[1]-dog_y, old_pos[2]-dog_z)
+    rel_p2 = (new_pos[0]-dog_x, new_pos[1]-dog_y, new_pos[2]-dog_z)
+
+    rad = math.radians(dog_yaw)
+    cosA = math.cos(rad)
+    sinA = math.sin(rad)
+    def rotate_y(p):
+        x, y, z = p
+        x2 = x*cosA + z*sinA
+        z2 = -x*sinA + z*cosA
+        return (x2,y,z2)
+
+    local_p1 = rotate_y(rel_p1)
+    local_p2 = rotate_y(rel_p2)
+
+    boxes = get_robodog_boxes()
+    for (bmin,bmax) in boxes:
+        if line_aabb_intersect(local_p1, local_p2, bmin, bmax):
+            return True
+    return False
+
+def dog_collides_with_world(x, y, z, world):
+    min_x = int(math.floor(x - DOG_WIDTH))
+    max_x = int(math.floor(x + DOG_WIDTH))
+    min_y = int(math.floor(y))
+    max_y = int(math.floor(y + DOG_HEIGHT))
+    min_z = int(math.floor(z - DOG_LENGTH))
+    max_z = int(math.floor(z + DOG_LENGTH))
+
+    for bx in range(min_x, max_x+1):
+        for by in range(min_y, max_y+1):
+            for bz in range(min_z, max_z+1):
+                if (bx,by,bz) in world:
+                    return True
+    return False
+
+def get_block_below(x, y, z, world):
+    below_y = int(math.floor(y - 0.1))
+    bx = int(math.floor(x))
+    bz = int(math.floor(z))
+    return (bx, below_y, bz) in world
+
+from config import PLAYER_EYE_HEIGHT
+def line_block_intersect_3d(x1,y1,z1,x2,y2,z2,world):
+    # A simplified line-of-sight check:
+    steps = int(max(abs(x2-x1), abs(y2-y1), abs(z2-z1))*2)
+    if steps < 1:
+        steps = 1
+    dx = (x2-x1)/steps
+    dy = (y2-y1)/steps
+    dz = (z2-z1)/steps
+    for i in range(steps+1):
+        cx = x1+dx*i
+        cy = y1+dy*i
+        cz = z1+dz*i
+        bx = int(math.floor(cx))
+        by = int(math.floor(cy))
+        bz = int(math.floor(cz))
+        if (bx,by,bz) in world and not (i==steps):
+            return True
+    return None
 
 class Bullet:
     def __init__(self, x, y, z, dx, dy, dz, radius=0.2, speed=30.0, max_dist=20.0, owner=None):
@@ -20,14 +153,35 @@ class Bullet:
         self.distance_traveled = 0
         self.max_distance = max_dist
         self.radius = radius
-        self.owner = owner  # 'player' or enemy instance
+        self.owner = owner
+        self.last_x = x
+        self.last_y = y
+        self.last_z = z
 
-    def update(self, dt_s):
+    def update(self, dt_s, world, enemies):
+        old_pos = (self.x, self.y, self.z)
         self.x += self.dx * self.speed * dt_s
         self.y += self.dy * self.speed * dt_s
         self.z += self.dz * self.speed * dt_s
         self.distance_traveled += self.speed * dt_s
-        return self.distance_traveled < self.max_distance
+        new_pos = (self.x, self.y, self.z)
+        if self.distance_traveled >= self.max_distance:
+            return False
+
+        bx = int(math.floor(self.x))
+        by = int(math.floor(self.y))
+        bz = int(math.floor(self.z))
+        if (bx,by,bz) in world:
+            return False
+
+        for e in enemies:
+            if e.health > 0 and e is not self.owner:
+                if bullet_or_rocket_hits_dog(old_pos, new_pos, e.x, e.y, e.z, e.yaw):
+                    e.take_damage(10)
+                    return False
+
+        self.last_x, self.last_y, self.last_z = self.x, self.y, self.z
+        return True
 
     def draw(self, sphere_quad):
         glPushMatrix()
@@ -49,59 +203,55 @@ class Rocket:
         self.max_distance = 50.0
         self.alive = True
         self.blast_radius = 3
+        self.last_x = x
+        self.last_y = y
+        self.last_z = z
 
-    def update(self, world, chunk_lists, explosions, dt_s):
+    def update(self, world, enemies, explosions, dt_s):
         if not self.alive:
             return False
+        old_pos = (self.x, self.y, self.z)
         self.x += self.dx * self.speed * dt_s
         self.y += self.dy * self.speed * dt_s
         self.z += self.dz * self.speed * dt_s
+        new_pos = (self.x, self.y, self.z)
         self.distance_traveled += self.speed * dt_s
         if self.distance_traveled > self.max_distance:
             self.alive = False
             return False
 
-        for e in all_enemies:
-            edx = e.x - self.x
-            edy = (e.y+0.5) - self.y
-            edz = e.z - self.z
-            dist = math.sqrt(edx*edx+edy*edy+edz*edz)
-            if dist < 0.5:
-                self.explode(int(math.floor(self.x)), int(math.floor(self.y)), int(math.floor(self.z)), world, chunk_lists)
-                explosions.append(Explosion(self.x,self.y,self.z))
-                self.alive = False
-                return False
+        for e in enemies:
+            if e.health > 0:
+                if bullet_or_rocket_hits_dog(old_pos, new_pos, e.x, e.y, e.z, e.yaw):
+                    self.explode(world, explosions)
+                    self.alive = False
+                    return False
 
         bx = int(math.floor(self.x))
         by = int(math.floor(self.y))
         bz = int(math.floor(self.z))
-
         if (bx,by,bz) in world:
-            self.explode(bx,by,bz, world, chunk_lists)
-            explosions.append(Explosion(self.x,self.y,self.z))
+            self.explode(world, explosions)
             self.alive = False
             return False
+
+        self.last_x,self.last_y,self.last_z = self.x,self.y,self.z
         return True
 
-    def explode(self, bx, by, bz, world, chunk_lists):
+    def explode(self, world, explosions):
+        from config import all_enemies, chunk_update_queue, chunk_coords_from_world
+        ex, ey, ez = int(math.floor(self.x)), int(math.floor(self.y)), int(math.floor(self.z))
         radius = self.blast_radius
         to_remove = []
-        for x in range(bx - radius, bx + radius + 1):
-            for y in range(by - radius, by + radius + 1):
-                for z in range(bz - radius, bz + radius + 1):
-                    dx = x - bx
-                    dy = y - by
-                    dz = z - bz
-                    dist = math.sqrt(dx*dx + dy*dy + dz*dz)
-                    if dist <= radius:
-                        if (x,y,z) in world:
-                            to_remove.append((x,y,z))
+        for X in range(ex - radius, ex + radius + 1):
+            for Y in range(ey - radius, ey + radius + 1):
+                for Z in range(ez - radius, ez + radius + 1):
+                    dist = math.sqrt((X - ex)**2+(Y - ey)**2+(Z - ez)**2)
+                    if dist <= radius and (X,Y,Z) in world:
+                        to_remove.append((X,Y,Z))
 
         for e in all_enemies:
-            edx = e.x - self.x
-            edy = (e.y+0.5) - self.y
-            edz = e.z - self.z
-            dist = math.sqrt(edx*edx+edy*edy+edz*edz)
+            dist = math.sqrt((e.x - self.x)**2 + ((e.y+0.5)-self.y)**2 + (e.z - self.z)**2)
             if dist <= radius:
                 e.take_damage(100)
 
@@ -110,25 +260,25 @@ class Rocket:
             del world[coords]
 
         updated_chunks = set()
-        for (x,y,z) in to_remove:
-            cx, cz = chunk_coords_from_world(x,z)
+        for (X,Y,Z) in to_remove:
+            cx, cz = chunk_coords_from_world(X,Z)
             updated_chunks.add((cx,cz))
         for (cx,cz) in updated_chunks:
             chunk_update_queue.append(("load", cx, cz))
+
+        explosions.append(Explosion(self.x,self.y,self.z))
 
     def draw(self, cylinder_quad):
         if not self.alive:
             return
         glPushMatrix()
         glTranslatef(self.x, self.y, self.z)
-        
         dx, dy, dz = self.dx, self.dy, self.dz
         mag = math.sqrt(dx*dx + dy*dy + dz*dz)
         if mag > 0:
             dx /= mag
             dy /= mag
             dz /= mag
-
         dot = dz
         if dot > 1.0: dot = 1.0
         if dot < -1.0: dot = -1.0
@@ -191,7 +341,6 @@ class Explosion:
         self.fireball_life -= self.life_decay_per_sec*dt_s
         if self.fireball_life < 0:
             self.fireball_life = 0
-
         if not any_alive and self.fireball_life<=0:
             self.alive=False
         return self.alive
@@ -204,7 +353,6 @@ class Explosion:
         dz = self.z - pz
         dist = math.sqrt(dx*dx+dy*dy+dz*dz)
         point_size = max(1.0, 50.0/(dist+1.0))
-
         fireball_radius = 1.5 * self.fireball_life
         if fireball_radius > 0:
             glPushMatrix()
@@ -227,7 +375,6 @@ class AmmoPickup:
         "shotgun": {"amount":10, "color":(0.3,0.3,0.3)},
         "rocket": {"amount":5, "color":(0.8,0.4,0.0)}
     }
-
     def __init__(self, x, y, z, ammo_type, chunk_coords):
         self.x = x
         self.y = y
@@ -250,7 +397,6 @@ class AmmoPickup:
         hw = 0.2
         hh = 0.1
         hl = 0.2
-
         glColor3f(*c)
         glBegin(GL_QUADS)
         v = [
@@ -258,32 +404,18 @@ class AmmoPickup:
             (px + hw, py - hh, pz - hl),
             (px + hw, py + hh, pz - hl),
             (px - hw, py + hh, pz - hl),
-
             (px - hw, py - hh, pz + hl),
             (px - hw, py + hh, pz + hl),
             (px + hw, py + hh, pz + hl),
             (px + hw, py - hh, pz + hl),
         ]
-
-        faces = [
-            (0,1,2,3),
-            (4,5,6,7),
-            (0,3,5,4),
-            (1,7,6,2),
-            (3,2,6,5),
-            (0,4,7,1),
-        ]
+        faces = [(0,1,2,3),(4,5,6,7),(0,3,5,4),(1,7,6,2),(3,2,6,5),(0,4,7,1)]
         for f in faces:
             for idx in f:
                 glVertex3f(*v[idx])
         glEnd()
-
         glColor3f(0,0,0)
-        edges = [
-            (0,1),(1,2),(2,3),(3,0),
-            (4,5),(5,6),(6,7),(7,4),
-            (0,4),(1,7),(2,6),(3,5)
-        ]
+        edges = [(0,1),(1,2),(2,3),(3,0),(4,5),(5,6),(6,7),(7,4),(0,4),(1,7),(2,6),(3,5)]
         glBegin(GL_LINES)
         for (a,b) in edges:
             glVertex3f(*v[a])
@@ -303,71 +435,137 @@ class RobotDog:
         self.z = z
         self.chunk_coords = chunk_coords
         self.health = 50
+        self.speed = 6.0
+        self.yaw = random.uniform(0,360)
+        self.target_yaw = self.yaw
+        self.turn_speed = 30.0
+        self.walk_timer = 0.0
+        self.walk_time = 0.0
+        self.change_dir_interval = random.uniform(3,6)
+        self.time_since_last_change = 0.0
+        self.vy = 0.0
+        self._pick_new_direction(force_move=True)
+
+        # Shooting properties:
         self.last_shot_time = 0.0
         self.fire_delay = 5.0
-        self.ideal_distance = 10.0
         self.shoot_range = 30.0
-        self.speed = 2.0
-        self.yaw = 0.0  # For facing direction
+
+    def _try_new_direction(self, world):
+        for _ in range(10):
+            attempt_yaw = random.uniform(0,360)
+            rad = math.radians(attempt_yaw)
+            f_x = -math.sin(rad)
+            f_z = math.cos(rad)
+            test_x = self.x + f_x * 0.5
+            test_z = self.z + f_z * 0.5
+            if not dog_collides_with_world(test_x, self.y, test_z, world):
+                return attempt_yaw
+        return random.uniform(0,360)
+
+    def _pick_new_direction(self, force_move=False, world=None):
+        if world is not None:
+            self.target_yaw = self._try_new_direction(world)
+        else:
+            self.target_yaw = random.uniform(0,360)
+        if force_move:
+            self.walk_time = random.uniform(2,4)
+        else:
+            if random.random() < 0.2:
+                self.walk_time = 0.0
+            else:
+                self.walk_time = random.uniform(2,4)
+        self.walk_timer = 0.0
+        self.time_since_last_change = 0.0
+        self.change_dir_interval = random.uniform(3,6)
 
     def update(self, dt_s, player_pos, world, bullets):
         if self.health <= 0:
             return False
 
+        # Gravity/falling:
+        if not get_block_below(self.x, self.y, self.z, world):
+            self.vy -= GRAVITY * dt_s
+            new_y = self.y + self.vy*dt_s
+            if dog_collides_with_world(self.x, new_y, self.z, world):
+                self.vy = 0.0
+            else:
+                self.y = new_y
+        else:
+            if self.vy < 0:
+                self.vy = 0.0
+
+        # Turn towards target_yaw
+        yaw_diff = (self.target_yaw - self.yaw) % 360
+        if yaw_diff > 180:
+            yaw_diff -= 360
+        turn_amount = self.turn_speed * dt_s
+        if abs(yaw_diff) < turn_amount:
+            self.yaw = self.target_yaw
+        else:
+            if yaw_diff > 0:
+                self.yaw += turn_amount
+            else:
+                self.yaw -= turn_amount
+        self.yaw %= 360
+
+        # Move if walk_time > 0
+        if self.walk_time > 0:
+            yaw_rad = math.radians(self.yaw)
+            forward_x = -math.sin(yaw_rad)
+            forward_z = math.cos(yaw_rad)
+            proposed_x = self.x + forward_x * self.speed * dt_s
+            proposed_z = self.z + forward_z * self.speed * dt_s
+            if not dog_collides_with_world(proposed_x, self.y, proposed_z, world):
+                self.x = proposed_x
+                self.z = proposed_z
+                self.walk_timer += dt_s
+                if self.walk_timer >= self.walk_time:
+                    self.walk_time = 0.0
+            else:
+                self._pick_new_direction(force_move=True, world=world)
+
+        # Occasionally pick new direction
+        self.time_since_last_change += dt_s
+        if self.time_since_last_change >= self.change_dir_interval:
+            self._pick_new_direction(world=world)
+
+        # Try shooting player if in line of sight and in range
         px, py, pz = player_pos
         dx = self.x - px
         dz = self.z - pz
         dist = math.sqrt(dx*dx + dz*dz)
-
-        moved = False
-        if dist < self.ideal_distance:
-            angle = math.atan2(dz, dx)
-            self.x += math.cos(angle)*self.speed*dt_s
-            self.z += math.sin(angle)*self.speed*dt_s
-            moved = True
-        elif dist > self.ideal_distance+5:
-            angle = math.atan2(-dz, -dx)
-            self.x += math.cos(angle)*self.speed*dt_s
-            self.z += math.sin(angle)*self.speed*dt_s
-            moved = True
-
-        if dist < self.ideal_distance:
-            angle = math.atan2(dz, dx)
-        elif dist > self.ideal_distance+5:
-            angle = math.atan2(-dz, -dx)
-        else:
-            angle = None
-
-        if angle is not None:
-            self.yaw = math.degrees(angle)-90
-
-        from world import line_block_intersect_3d
-        res = line_block_intersect_3d(self.x, self.y+0.5, self.z, px, py+PLAYER_EYE_HEIGHT, pz, world)
-        if res is None and dist < self.shoot_range:
-            current_time = time.time()
-            if (current_time - self.last_shot_time) > self.fire_delay:
-                dirx = px - self.x
-                diry = (py+PLAYER_EYE_HEIGHT) - (self.y+0.5)
-                dirz = pz - self.z
-                mag = math.sqrt(dirx*dirx+diry*diry+dirz*dirz)
-                if mag > 1e-9:
-                    dirx /= mag
-                    diry /= mag
-                    dirz /= mag
-                start_x = self.x + dirx * 0.6
-                start_y = self.y + 0.8 + diry * 0.6
-                start_z = self.z + dirz * 0.6
-                b = Bullet(start_x, start_y, start_z, dirx, diry, dirz, radius=0.05, owner=self)
-                bullets.append(b)
-                edist = math.sqrt((self.x - px)**2 + (self.y - py)**2 + (self.z - pz)**2)
-                vol = 0.0
-                if edist < 32.0:
-                    vol = 1.0 - (edist/32.0)
-                if enemy_pistol_sound is not None:
-                    enemy_pistol_sound.set_volume(vol)
-                    if vol > 0.0:
-                        enemy_pistol_sound.play()
-                self.last_shot_time = current_time
+        if dist < self.shoot_range:
+            # Check line of sight:
+            res = line_block_intersect_3d(self.x, self.y+0.5, self.z, px, py+PLAYER_EYE_HEIGHT, pz, world)
+            if res is None:
+                # player visible
+                current_time = time.time()
+                if (current_time - self.last_shot_time) > self.fire_delay:
+                    # Shoot at player
+                    dirx = px - self.x
+                    diry = (py+PLAYER_EYE_HEIGHT) - (self.y+0.5)
+                    dirz = pz - self.z
+                    mag = math.sqrt(dirx*dirx+diry*diry+dirz*dirz)
+                    if mag>1e-9:
+                        dirx /= mag
+                        diry /= mag
+                        dirz /= mag
+                    start_x = self.x + dirx * 0.6
+                    start_y = self.y + 0.8 + diry * 0.6
+                    start_z = self.z + dirz * 0.6
+                    from entities import Bullet
+                    b = Bullet(start_x, start_y, start_z, dirx, diry, dirz, radius=0.05, owner=self)
+                    bullets.append(b)
+                    if enemy_pistol_sound is not None:
+                        edist = math.sqrt((self.x - px)**2 + (self.y - py)**2 + (self.z - pz)**2)
+                        vol = 0.0
+                        if edist < 32.0:
+                            vol = 1.0 - (edist/32.0)
+                        enemy_pistol_sound.set_volume(vol)
+                        if vol>0.0:
+                            enemy_pistol_sound.play()
+                    self.last_shot_time = current_time
 
         return True
 
@@ -377,49 +575,54 @@ class RobotDog:
     def draw(self):
         glPushMatrix()
         glTranslatef(self.x, self.y, self.z)
-        glRotatef(self.yaw, 0,1,0)
+        glRotatef(-self.yaw, 0,1,0)
 
-        glColor3f(1.0,0.85,0.0)
-        body_hw = 0.5
-        body_hh = 0.3
+        # Body:
+        body_hw = 0.25
+        body_hh = 0.12
         body_hl = 0.5
-        draw_box(0, body_hh, 0, body_hw, body_hh, body_hl)
+        glColor3f(1.0,0.85,0.0)
+        draw_box(0,0.72,0,body_hw,body_hh,body_hl)
 
+        # Head smaller:
         glColor3f(0.0,0.0,0.0)
-        head_hw = 0.2
-        head_hh = 0.2
-        head_hl = 0.2
-        draw_box(0, body_hh+0.2, -body_hl-head_hl, head_hw, head_hh, head_hl)
+        head_hw = 0.12
+        head_hh = 0.12
+        head_hl = 0.12
+        draw_box(0,0.9,body_hl+head_hl, head_hw, head_hh, head_hl)
 
-        glColor3f(0.0,0.0,0.0)
+        # Legs:
         leg_hw = 0.05
         leg_hh = 0.3
         leg_hl = 0.05
-        draw_box(-body_hw+leg_hw, leg_hh, -body_hl+leg_hl, leg_hw, leg_hh, leg_hl)
-        draw_box(body_hw-leg_hw, leg_hh, -body_hl+leg_hl, leg_hw, leg_hh, leg_hl)
-        draw_box(-body_hw+leg_hw, leg_hh, body_hl-leg_hl, leg_hw, leg_hh, leg_hl)
-        draw_box(body_hw-leg_hw, leg_hh, body_hl-leg_hl, leg_hw, leg_hh, leg_hl)
+        draw_box(-body_hw+leg_hw,0.3, body_hl-leg_hl, leg_hw, leg_hh, leg_hl)
+        draw_box(body_hw-leg_hw,0.3, body_hl-leg_hl, leg_hw, leg_hh, leg_hl)
+        draw_box(-body_hw+leg_hw,0.3,-body_hl+leg_hl, leg_hw, leg_hh, leg_hl)
+        draw_box(body_hw-leg_hw,0.3,-body_hl+leg_hl, leg_hw, leg_hh, leg_hl)
 
+        # Pistol forward:
         glPushMatrix()
-        glTranslatef(0, body_hh+0.35, 0)
-        glScalef(0.5,0.5,0.5)
+        glTranslatef(0, 1.05, 0)
+        glScalef(1.5,1.5,1.5)
         def draw_pistol_for_dog():
             glColor3f(0.8,0.8,0.8)
             slide_half_w = 0.03
             slide_half_h = 0.03
             slide_half_l = 0.15
-            slide_center_z = -0.075
+            slide_center_z = 0.075
             draw_box(0,0,slide_center_z, slide_half_w, slide_half_h, slide_half_l)
+
             handle_half_w = 0.02
             handle_half_h = 0.05
             handle_half_l = 0.05
-            handle_center_z = -0.05
+            handle_center_z = 0.05
             handle_center_y = -0.03 - handle_half_h
             draw_box(0, handle_center_y, handle_center_z, handle_half_w, handle_half_h, handle_half_l)
+
             barrel_half_w = 0.01
             barrel_half_h = 0.01
             barrel_half_l = 0.05
-            barrel_center_z = -0.175
+            barrel_center_z = 0.175
             draw_box(0,0,barrel_center_z, barrel_half_w, barrel_half_h, barrel_half_l)
         draw_pistol_for_dog()
         glPopMatrix()

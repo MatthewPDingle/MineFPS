@@ -490,34 +490,23 @@ def main():
                     if bid == id(b):
                         prev_pos = (ix,iy,iz)
                         break
-                alive = b.update(dt_s)
+                alive = b.update(dt_s, world, all_enemies)  # Pass world and all_enemies here
                 if not alive:
+                    # bullet died (hit block or enemy)
+                    bx = int(math.floor(b.x))
+                    by = int(math.floor(b.y))
+                    bz = int(math.floor(b.z))
+                    if (bx,by,bz) in world:
+                        snd_hit.play()
+                        if prev_pos is not None:
+                            res = line_block_intersect(prev_pos[0],prev_pos[1],prev_pos[2],b.x,b.y,b.z,bx,by,bz)
+                            if res:
+                                ix,iy,iz, nx,ny,nz = res
+                                bulletmarks.add_bullet_mark(bx, by, bz, ix, iy, iz, nx, ny, nz)
                     continue
-                bx = int(math.floor(b.x))
-                by = int(math.floor(b.y))
-                bz = int(math.floor(b.z))
-                if (bx,by,bz) in world:
-                    snd_hit.play()
-                    if prev_pos is not None:
-                        res = line_block_intersect(prev_pos[0],prev_pos[1],prev_pos[2],b.x,b.y,b.z,bx,by,bz)
-                        if res:
-                            ix,iy,iz, nx,ny,nz = res
-                            bulletmarks.add_bullet_mark(bx, by, bz, ix, iy, iz, nx, ny, nz)
-                else:
-                    for e in all_enemies:
-                        if b.owner == e:
-                            continue
-                        edx = e.x - b.x
-                        edy = (e.y+0.5) - b.y
-                        edz = e.z - b.z
-                        dist = math.sqrt(edx*edx+edy*edy+edz*edz)
-                        if dist < 0.5:
-                            e.take_damage(DAMAGE_BULLET)
-                            alive = False
-                            break
-                    if alive:
-                        new_bullets.append(b)
-                        bullet_last_positions_new.append((id(b),b.x,b.y,b.z))
+                # Still alive
+                new_bullets.append(b)
+                bullet_last_positions_new.append((id(b),b.x,b.y,b.z))
 
             bullets = new_bullets
             bullet_last_positions = bullet_last_positions_new
@@ -525,7 +514,7 @@ def main():
             new_rockets = []
             for r in rockets:
                 was_alive = r.alive
-                still_alive = r.update(world, chunk_vbos, explosions, dt_s)
+                still_alive = r.update(world, all_enemies, explosions, dt_s)
                 if was_alive and not r.alive:
                     snd_explosion.play()
                 if still_alive:
@@ -705,7 +694,7 @@ def main():
                 bar_height = 4
                 hp_ratio = ehp/50.0
                 bx = ex - bar_width/2
-                by = ey - 2  # even lower
+                by = ey - 2
 
                 glColor3f(0,0,0)
                 glBegin(GL_LINE_LOOP)
