@@ -1,6 +1,6 @@
 # MineFPS
 
-This project is a first-person shooter demo set within a procedurally generated, voxel-like world in the style of Minecraft.  It is written entirely by OpenAI’s o1-pro model, leveraging [PyOpenGL](https://www.google.com/search?q=PyOpenGL) and [Pygame](https://www.google.com/search?q=pygame) for rendering and input, and featuring dynamic chunk loading, basic enemies, projectiles, explosions, and world deformation.
+MineFPS is a first-person shooter demo set within a procedurally generated, voxel-like world in the style of Minecraft.  It is written entirely by OpenAI’s o1-pro model using iterative prompting.  It leverages [PyOpenGL](https://www.google.com/search?q=PyOpenGL) and [Pygame](https://www.google.com/search?q=pygame) for rendering and input, and features dynamic chunk loading, basic enemies, projectiles, explosions, and world deformation.
 
 ## Features
 
@@ -34,23 +34,26 @@ This project is a first-person shooter demo set within a procedurally generated,
 
 ```python main.py```
 
-## Controls
-W / A / S / D: Move forward/left/back/right.
-Mouse Movement: Look around (pitch and yaw).
-Left Mouse Button: Fire the currently selected weapon.
-Space: Jump.
-Shift (hold): Sprint for increased movement speed.
-1 / 2 / 3: Switch between the Pistol, Shotgun, and Rocket Launcher.
-Mouse Wheel: Quick-swap through available weapons.
-Escape: Quit the game.
-F11: Toggle fullscreen.
+## Coding the game
 
+If you run unify.py you will get a single text file with all source code for the game organized by tags that you can paste into an AI model's context window like o1-pro to continue development.  This method was used to iteratively develop the game.
+
+## Controls
+   - W / A / S / D: Move forward/left/back/right.
+   - Mouse Movement: Look around (pitch and yaw).
+   - Left Mouse Button: Fire the currently selected weapon.
+   - Space: Jump.
+   - Shift (hold): Sprint for increased movement speed.
+   - 1 / 2 / 3: Switch between the Pistol, Shotgun, and Rocket Launcher.
+   - Mouse Wheel: Quick-swap through available weapons.
+   - Escape: Quit the game.
+   - F11: Toggle fullscreen.
 
 ## Weapons and Ammo
-Pistol: Medium rate of fire, decent accuracy, large ammo pool.
-Shotgun: Fires multiple pellets with wide spread; good for close range.
-Rocket Launcher: Slow fire rate, limited ammo, but destructive explosions that deform the world.
-Ammo pickups appear around the world and can be collected by moving close to them.
+   - Pistol: Medium rate of fire, decent accuracy, large ammo pool.
+   - Shotgun: Fires multiple pellets with wide spread; good for close range.
+   - Rocket Launcher: Slow fire rate, limited ammo, but destructive explosions that deform the world.
+   - Ammo pickups appear around the world and can be collected by moving close to them.
 
 ## Screenshot
 ![MineFPS screenshot](MineFPS.png)
