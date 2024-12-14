@@ -11,7 +11,7 @@ from render import set_display_mode, draw_text_2d_cached, render_chunk_vbo, text
 from world import (create_initial_world, process_chunk_updates, all_initial_chunks_loaded,
                    update_loaded_chunks, chunk_update_queue, remove_block)
 from player import move_player, apply_gravity, player_pickup
-from entities import Bullet, Rocket, Explosion
+from entities import Bullet, Rocket, Explosion, robodrone_sound, enemy_pistol_sound, robodrone_explosion_sound
 from chunk_worker import generation_queue, generated_chunks_queue, start_chunk_worker
 import bulletmarks
 import entities
@@ -285,6 +285,7 @@ def main():
     pygame.init()
     pygame.font.init()
     pygame.mixer.init()
+    pygame.mixer.set_num_channels(64)  # multiple sounds can overlap now
 
     snd_explosion = pygame.mixer.Sound("assets/explosion.flac")
     snd_hit = pygame.mixer.Sound("assets/hit.flac")
@@ -293,8 +294,11 @@ def main():
     snd_rocketlauncher = pygame.mixer.Sound("assets/rocketlauncher.flac")
     snd_shotgun = pygame.mixer.Sound("assets/shotgun.flac")
     snd_ammo = pygame.mixer.Sound("assets/ammo.flac")
+    snd_robodrone = pygame.mixer.Sound("assets/robodrone.flac")
 
     entities.enemy_pistol_sound = snd_pistol
+    entities.robodrone_sound = snd_robodrone
+    entities.robodrone_explosion_sound = snd_explosion  # re-use explosion sound for drone explosions
 
     font = pygame.font.SysFont("Arial", 18)
 
@@ -343,6 +347,10 @@ def main():
     random.seed()
 
     from config import all_enemies
+
+    # We'll manage the robodrone sound in main now:
+    # We'll only play it for the closest drone.
+    robodrone_channel = None
 
     def play_sound_with_distance(sound, sx, sy, sz):
         if px is None:
@@ -483,16 +491,14 @@ def main():
 
             new_bullets = []
             bullet_last_positions_new = []
-            from config import all_enemies
             for b in bullets:
                 prev_pos = None
                 for (bid,ix,iy,iz) in bullet_last_positions:
                     if bid == id(b):
                         prev_pos = (ix,iy,iz)
                         break
-                alive = b.update(dt_s, world, all_enemies)  # Pass world and all_enemies here
+                alive = b.update(dt_s, world, all_enemies)
                 if not alive:
-                    # bullet died (hit block or enemy)
                     bx = int(math.floor(b.x))
                     by = int(math.floor(b.y))
                     bz = int(math.floor(b.z))
@@ -504,7 +510,6 @@ def main():
                                 ix,iy,iz, nx,ny,nz = res
                                 bulletmarks.add_bullet_mark(bx, by, bz, ix, iy, iz, nx, ny, nz)
                     continue
-                # Still alive
                 new_bullets.append(b)
                 bullet_last_positions_new.append((id(b),b.x,b.y,b.z))
 
@@ -516,6 +521,8 @@ def main():
                 was_alive = r.alive
                 still_alive = r.update(world, all_enemies, explosions, dt_s)
                 if was_alive and not r.alive:
+                    # Explosion sound is already handled by rocket explode logic in main after update?
+                    # Actually we just noticed rocket explosion sound is played above in code after update
                     snd_explosion.play()
                 if still_alive:
                     new_rockets.append(r)
@@ -526,10 +533,41 @@ def main():
             new_enemies = []
             player_pos = (px, py, pz)
             for e in all_enemies:
-                alive = e.update(dt_s, player_pos, world, bullets)
+                alive = e.update(dt_s, player_pos, world, bullets, explosions)
                 if e.health > 0 and alive:
                     new_enemies.append(e)
             all_enemies[:] = new_enemies
+
+            # Drone sound logic:
+            # Find the closest drone
+            closest_dist = 9999999
+            closest_drone = None
+            for e in all_enemies:
+                if isinstance(e, entities.RoboDrone) and e.health > 0:
+                    dx = e.x - px
+                    dy = e.y - py
+                    dz = e.z - pz
+                    dist = math.sqrt(dx*dx + dy*dy + dz*dz)
+                    if dist < closest_dist:
+                        closest_dist = dist
+                        closest_drone = e
+
+            # If we found a closest drone within 24 units (hearing range?), play looped sound
+            # If no drone or too far, stop the sound
+            if closest_drone is not None and closest_dist <= 24.0:
+                volume = max(0.0, 1.0 - (closest_dist / 24.0))
+                # If robodrone_sound is set, ensure it plays on a specific channel:
+                # We'll just keep track of a single channel for drones:
+                if robodrone_sound is not None:
+                    if robodrone_channel is None or not robodrone_channel.get_busy():
+                        # start playing looped
+                        robodrone_channel = robodrone_sound.play(-1)
+                    robodrone_channel.set_volume(volume)
+            else:
+                # No close drone
+                if robodrone_channel is not None and robodrone_channel.get_busy():
+                    robodrone_channel.stop()
+                    robodrone_channel = None
 
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 
@@ -571,23 +609,18 @@ def main():
             for en in all_enemies:
                 en.draw()
 
-            # Check enemy HP bars
+            # Enemy HP bars
             enemy_positions_2d = []
             w, h = screen.get_size()
-
-            # Compute forward vector of camera for visibility check
-            cam_rad_x = math.radians(rx)
-            cam_rad_y = math.radians(ry)
-            fdx = math.sin(cam_rad_y)*math.cos(cam_rad_x)
-            fdy = math.sin(cam_rad_x)
-            fdz = -math.cos(cam_rad_y)*math.cos(cam_rad_x)
-
             for en in all_enemies:
                 dist = math.sqrt((en.x - px)**2 + (en.y - py)**2 + (en.z - pz)**2)
                 if dist <= 20.0 and en.health > 0:
                     exv = en.x - px
                     eyv = (en.y+1.2) - eye_y
                     ezv = en.z - pz
+                    fdx = dx
+                    fdy = dy
+                    fdz = dz
                     dot = exv*fdx + eyv*fdy + ezv*fdz
                     if dot < 0:
                         continue
@@ -596,7 +629,8 @@ def main():
                         continue
                     if wx < 0 or wx > w or wy < 0 or wy > h:
                         continue
-                    enemy_positions_2d.append((wx, h - wy, en.health, dist))
+                    hp_ratio = en.health / float(en.max_health)
+                    enemy_positions_2d.append((wx, h - wy, hp_ratio, dist))
 
         glMatrixMode(GL_PROJECTION)
         glPushMatrix()
@@ -689,10 +723,9 @@ def main():
                     glEnd()
                 icon_x += size+5
 
-            for (ex, ey, ehp, dist) in enemy_positions_2d:
+            for (ex, ey, hp_ratio, dist) in enemy_positions_2d:
                 bar_width = 30
                 bar_height = 4
-                hp_ratio = ehp/50.0
                 bx = ex - bar_width/2
                 by = ey - 2
 

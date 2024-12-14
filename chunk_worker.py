@@ -2,7 +2,7 @@
 import threading, queue, math, random, time
 from config import CHUNK_SIZE, GROUND_LEVEL, chunk_coords_from_world
 from render import build_chunk_vertex_data
-from entities import AmmoPickup, RobotDog
+from entities import AmmoPickup, RobotDog, RoboDrone
 
 generation_queue = queue.Queue()
 generated_chunks_queue = queue.Queue()
@@ -45,12 +45,20 @@ def generate_chunk_data(cx, cz):
         pickups.append(p)
 
     enemies = []
-    # 25% spawn chance:
+    # 25% spawn chance for RobotDog
     if random.random() < 0.25:
         ex = base_x + random.randint(0, CHUNK_SIZE-1) + 0.5
         ez = base_z + random.randint(0, CHUNK_SIZE-1) + 0.5
         ey = GROUND_LEVEL + 1.0
         e = RobotDog(ex, ey, ez, (cx, cz))
+        enemies.append(e)
+
+    # 20% spawn chance for RoboDrone
+    if random.random() < 0.20:
+        ex = base_x + random.randint(0, CHUNK_SIZE-1) + 0.5
+        ez = base_z + random.randint(0, CHUNK_SIZE-1) + 0.5
+        ey = GROUND_LEVEL + 10.0
+        e = RoboDrone(ex, ey, ez, (cx, cz))
         enemies.append(e)
 
     return chunk_data, pickups, enemies

@@ -6,8 +6,11 @@ from OpenGL.GLU import *
 from config import PLAYER_EYE_HEIGHT, chunk_update_queue, chunk_coords_from_world, all_enemies
 from render import draw_box
 import bulletmarks
+import pygame
 
 enemy_pistol_sound = None
+robodrone_sound = None
+robodrone_explosion_sound = None  # For drone explosions
 
 GRAVITY = 36.0
 
@@ -160,7 +163,6 @@ class Bullet:
         self.y += self.dy * self.speed * dt_s
         self.z += self.dz * self.speed * dt_s
         self.distance_traveled += self.speed * dt_s
-        new_pos = (self.x, self.y, self.z)
         if self.distance_traveled >= self.max_distance:
             return False
 
@@ -172,7 +174,7 @@ class Bullet:
 
         for e in enemies:
             if e.health > 0 and e is not self.owner:
-                if bullet_or_rocket_hits_dog(old_pos, new_pos, e.x, e.y, e.z, e.yaw):
+                if bullet_or_rocket_hits_dog(old_pos, (self.x, self.y, self.z), e.x, e.y, e.z, getattr(e, 'yaw', 0)):
                     e.take_damage(10)
                     return False
 
@@ -217,7 +219,7 @@ class Rocket:
 
         for e in enemies:
             if e.health > 0:
-                if bullet_or_rocket_hits_dog(old_pos, (self.x,self.y,self.z), e.x, e.y, e.z, e.yaw):
+                if bullet_or_rocket_hits_dog(old_pos, (self.x,self.y,self.z), e.x, e.y, e.z, getattr(e, 'yaw', 0)):
                     self.explode(world, explosions)
                     self.alive = False
                     return False
@@ -430,6 +432,7 @@ class RobotDog:
         self.z = z
         self.chunk_coords = chunk_coords
         self.health = 50
+        self.max_health = 50
         self.speed = 6.0
         self.yaw = random.uniform(0,360)
         self.target_yaw = self.yaw
@@ -476,7 +479,7 @@ class RobotDog:
         self.time_since_last_change = 0.0
         self.change_dir_interval = random.uniform(3,6)
 
-    def update(self, dt_s, player_pos, world, bullets):
+    def update(self, dt_s, player_pos, world, bullets, explosions):
         if self.health <= 0:
             return False
 
@@ -533,7 +536,6 @@ class RobotDog:
         dz = pz - self.z
         rad_yaw = math.radians(self.yaw)
 
-        # Flip the side axis by negating the calculation of lx:
         lx = -(dx*math.cos(-rad_yaw) - dz*math.sin(-rad_yaw))
         lz = dx*math.sin(-rad_yaw) + dz*math.cos(-rad_yaw)
 
@@ -556,7 +558,6 @@ class RobotDog:
                     start_x = self.x + dx * 0.6
                     start_y = self.y + 0.8 + dy * 0.6
                     start_z = self.z + dz * 0.6
-                    from entities import Bullet
                     b = Bullet(start_x, start_y, start_z, dx, dy, dz, radius=0.05, owner=self)
                     bullets.append(b)
                     if enemy_pistol_sound is not None:
@@ -631,5 +632,188 @@ class RobotDog:
             draw_box(0,0,barrel_center_z, barrel_half_w, barrel_half_h, barrel_half_l)
         draw_pistol_for_dog()
         glPopMatrix()
+
+        glPopMatrix()
+
+class RoboDrone:
+    def __init__(self, x, y, z, chunk_coords):
+        self.x = x
+        self.y = y
+        self.z = z
+        self.chunk_coords = chunk_coords
+        self.health = 5
+        self.max_health = 5
+        self.patrol_speed = 6.0
+        self.attack_speed = 10.0
+        self.current_speed = self.patrol_speed
+        self.yaw = random.uniform(0,360)
+        self.target_yaw = self.yaw
+        self.turn_speed = 30.0
+        self.time_since_last_change = 0.0
+        self.change_dir_interval = random.uniform(3,6)
+
+        # State: "patrol" or "attack"
+        self.state = "patrol"
+
+        # Vertical hover parameters
+        self.hover_base_y = self.y
+        self.hover_amplitude = 0.5
+        self.hover_speed = 2.0
+        self.hover_timer = 0.0
+
+        self.blast_radius = 3
+
+    def take_damage(self, amount):
+        self.health -= amount
+
+    def explode(self, world, explosions):
+        # Play explosion sound for drone
+        if robodrone_explosion_sound is not None:
+            robodrone_explosion_sound.play()
+
+        from config import all_enemies, chunk_update_queue, chunk_coords_from_world
+        ex, ey, ez = int(math.floor(self.x)), int(math.floor(self.y)), int(math.floor(self.z))
+        radius = self.blast_radius
+        to_remove = []
+        for X in range(ex - radius, ex + radius + 1):
+            for Y in range(ey - radius, ey + radius + 1):
+                for Z in range(ez - radius, ez + radius + 1):
+                    dist = math.sqrt((X - ex)**2+(Y - ey)**2+(Z - ez)**2)
+                    if dist <= radius and (X,Y,Z) in world:
+                        to_remove.append((X,Y,Z))
+
+        for e in all_enemies:
+            dist = math.sqrt((e.x - self.x)**2 + ((e.y+0.5)-self.y)**2 + (e.z - self.z)**2)
+            if dist <= radius:
+                e.take_damage(100)
+
+        for coords in to_remove:
+            bulletmarks.remove_bullet_marks_for_block(coords)
+            del world[coords]
+
+        updated_chunks = set()
+        for (X,Y,Z) in to_remove:
+            cx, cz = chunk_coords_from_world(X,Z)
+            updated_chunks.add((cx,cz))
+        for (cx,cz) in updated_chunks:
+            chunk_update_queue.append(("load", cx, cz))
+
+        explosions.append(Explosion(self.x,self.y,self.z))
+
+    def _pick_new_direction(self, world=None):
+        self.target_yaw = random.uniform(0,360)
+        self.time_since_last_change = 0.0
+        self.change_dir_interval = random.uniform(3,6)
+
+    def update(self, dt_s, player_pos, world, bullets, explosions):
+        if self.health <= 0:
+            # Dead: explode if not done
+            self.explode(world, explosions)
+            return False
+
+        px, py, pz = player_pos
+        dx = px - self.x
+        dy = (py + PLAYER_EYE_HEIGHT) - self.y
+        dz = pz - self.z
+        dist = math.sqrt(dx*dx + dy*dy + dz*dz)
+
+        if self.state == "patrol":
+            if dist < 20.0:
+                self.state = "attack"
+                self.current_speed = self.attack_speed
+            else:
+                self.time_since_last_change += dt_s
+                if self.time_since_last_change >= self.change_dir_interval:
+                    self._pick_new_direction()
+
+                # Turn towards target_yaw
+                yaw_diff = (self.target_yaw - self.yaw) % 360
+                if yaw_diff > 180:
+                    yaw_diff -= 360
+                turn_amount = self.turn_speed * dt_s
+                if abs(yaw_diff) < turn_amount:
+                    self.yaw = self.target_yaw
+                else:
+                    if yaw_diff > 0:
+                        self.yaw += turn_amount
+                    else:
+                        self.yaw -= turn_amount
+                self.yaw %= 360
+
+                # Move forward at patrol speed
+                yaw_rad = math.radians(self.yaw)
+                forward_x = -math.sin(yaw_rad)
+                forward_z = math.cos(yaw_rad)
+                self.x += forward_x * self.patrol_speed * dt_s
+                self.z += forward_z * self.patrol_speed * dt_s
+
+        elif self.state == "attack":
+            if dist < 1.5:
+                self.explode(world, explosions)
+                self.health = 0
+                return False
+            angle_to_player = math.degrees(math.atan2(-dx, dz)) % 360
+            yaw_diff = (angle_to_player - self.yaw) % 360
+            if yaw_diff > 180:
+                yaw_diff -= 360
+            turn_amount = self.turn_speed * dt_s
+            if abs(yaw_diff) < turn_amount:
+                self.yaw = angle_to_player
+            else:
+                if yaw_diff > 0:
+                    self.yaw += turn_amount
+                else:
+                    self.yaw -= turn_amount
+            self.yaw %= 360
+
+            # Move towards player
+            yaw_rad = math.radians(self.yaw)
+            forward_x = -math.sin(yaw_rad)
+            forward_z = math.cos(yaw_rad)
+            self.y += dy * dt_s * 0.8
+            self.x += forward_x * self.attack_speed * dt_s
+            self.z += forward_z * self.attack_speed * dt_s
+
+        # Hover effect
+        self.hover_timer += dt_s * self.hover_speed
+        hover_offset = math.sin(self.hover_timer) * self.hover_amplitude
+        if self.state == "patrol":
+            self.y = self.hover_base_y + hover_offset
+
+        return True
+
+    def draw(self):
+        glPushMatrix()
+        glTranslatef(self.x, self.y, self.z)
+        glRotatef(-self.yaw, 0,1,0)
+
+        # Narrower body
+        body_hw = 0.15
+        body_hh = 0.1
+        body_hl = 0.4
+        glColor3f(1.0, 0.85, 0.0)
+        draw_box(0,0,0, body_hw, body_hh, body_hl)
+
+        # Larger propellers
+        glColor3f(0.2,0.2,0.2)
+        prop_radius = 0.05
+        prop_length = 0.6
+        prop_positions = [
+            ( body_hw,  body_hh+0.05,  body_hl),
+            (-body_hw,  body_hh+0.05,  body_hl),
+            ( body_hw,  body_hh+0.05, -body_hl),
+            (-body_hw,  body_hh+0.05, -body_hl),
+        ]
+
+        for (px, py, pz) in prop_positions:
+            glPushMatrix()
+            glTranslatef(px, py, pz)
+            glRotatef(90, 1,0,0)
+            gluCylinder(gluNewQuadric(), prop_radius, prop_radius, prop_length, 8, 1)
+            glPushMatrix()
+            glRotatef(90,0,0,1)
+            gluCylinder(gluNewQuadric(), prop_radius, prop_radius, prop_length, 8, 1)
+            glPopMatrix()
+            glPopMatrix()
 
         glPopMatrix()
