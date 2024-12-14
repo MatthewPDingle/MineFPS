@@ -24,7 +24,7 @@ MineFPS is a first-person shooter demo set within a procedurally generated, voxe
 5. **Hostile Enemy - Robodogs:**  
    Patrols the area, occasionally firing at the player. They respond to hits and explosions, and have their own simple AI logic for movement and targeting.
 
-6. **Hostile Enemy - Robodrones:**
+6. **Hostile Enemy - Robodrones:**  
    Suicide drone that patrols the skies and tries to blow up the player by flying into them.
 
 7. **Explosions and World Deformation:**  
