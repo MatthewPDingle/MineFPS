@@ -787,17 +787,17 @@ class RoboDrone:
         glTranslatef(self.x, self.y, self.z)
         glRotatef(-self.yaw, 0,1,0)
 
-        # Narrower body
         body_hw = 0.15
         body_hh = 0.1
         body_hl = 0.4
         glColor3f(1.0, 0.85, 0.0)
         draw_box(0,0,0, body_hw, body_hh, body_hl)
 
-        # Larger propellers
+        # Propellers with a bit of height:
+        # 1/4 the height of the body = body height is 2*body_hh = 0.2, 1/4 = 0.05
+        prop_radius = 0.3
+        prop_height = 0.05
         glColor3f(0.2,0.2,0.2)
-        prop_radius = 0.05
-        prop_length = 0.6
         prop_positions = [
             ( body_hw,  body_hh+0.05,  body_hl),
             (-body_hw,  body_hh+0.05,  body_hl),
@@ -805,15 +805,19 @@ class RoboDrone:
             (-body_hw,  body_hh+0.05, -body_hl),
         ]
 
+        quadric = gluNewQuadric()
         for (px, py, pz) in prop_positions:
             glPushMatrix()
             glTranslatef(px, py, pz)
-            glRotatef(90, 1,0,0)
-            gluCylinder(gluNewQuadric(), prop_radius, prop_radius, prop_length, 8, 1)
-            glPushMatrix()
-            glRotatef(90,0,0,1)
-            gluCylinder(gluNewQuadric(), prop_radius, prop_radius, prop_length, 8, 1)
-            glPopMatrix()
+            # Rotate so disk normal is along y-axis (horizontal rotor)
+            glRotatef(-90, 1,0,0)
+            # Bottom disk
+            gluDisk(quadric, 0, prop_radius, 32, 1)
+            # Cylinder
+            gluCylinder(quadric, prop_radius, prop_radius, prop_height, 32, 1)
+            # Move up and top disk
+            glTranslatef(0, prop_height, 0)
+            gluDisk(quadric, 0, prop_radius, 32, 1)
             glPopMatrix()
 
         glPopMatrix()

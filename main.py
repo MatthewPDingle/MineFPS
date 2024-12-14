@@ -296,6 +296,8 @@ def main():
     snd_ammo = pygame.mixer.Sound("assets/ammo.flac")
     snd_robodrone = pygame.mixer.Sound("assets/robodrone.flac")
 
+    robodrone_sound = snd_robodrone
+
     entities.enemy_pistol_sound = snd_pistol
     entities.robodrone_sound = snd_robodrone
     entities.robodrone_explosion_sound = snd_explosion  # re-use explosion sound for drone explosions
