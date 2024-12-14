@@ -21,13 +21,16 @@ MineFPS is a first-person shooter demo set within a procedurally generated, voxe
    
    Ammo pickups are scattered around the world.
 
-5. **Hostile Enemies (Robodogs):**  
-   Enemies patrol chunks, occasionally firing at the player. They respond to hits and explosions, and have their own simple AI logic for movement and targeting.
+5. **Hostile Enemy - Robodogs:**  
+   Patrols the area, occasionally firing at the player. They respond to hits and explosions, and have their own simple AI logic for movement and targeting.
 
-6. **Explosions and World Deformation:**  
+6. **Hostile Enemy - Robodrones:**
+   Suicide drone that patrols the skies and tries to blow up the player by flying into them.
+
+7. **Explosions and World Deformation:**  
    Rockets cause explosions that remove blocks and leave bullet marks on impacted surfaces. The world updates rendering dynamically after block removal.
 
-7. **Bullet Marks and Visual Effects:**  
+8. **Bullet Marks and Visual Effects:**  
    Shots leave bullet marks on surfaces, and rocket blasts produce sparks and fireballs rendered as particle systems.
 
 ## Running the game
