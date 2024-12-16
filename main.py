@@ -139,16 +139,73 @@ def draw_rocket_launcher():
     sight_cy = 0.07
     draw_box(0,sight_cy,sight_cz,sight_hw,sight_hh,sight_hl)
 
-def draw_simple_weapon(wid):
+def draw_pistol_2d(x, y, size):
+    glColor3f(0.8,0.8,0.8)
+    # main body
+    glBegin(GL_QUADS)
+    glVertex2f(x, y)
+    glVertex2f(x+size*0.6, y)
+    glVertex2f(x+size*0.6, y+size*0.4)
+    glVertex2f(x, y+size*0.4)
+    glEnd()
+    # barrel
+    glBegin(GL_QUADS)
+    glVertex2f(x+size*0.6, y+size*0.15)
+    glVertex2f(x+size, y+size*0.15)
+    glVertex2f(x+size, y+size*0.25)
+    glVertex2f(x+size*0.6, y+size*0.25)
+    glEnd()
+
+def draw_shotgun_2d(x, y, size):
+    glColor3f(0.3,0.3,0.3)
+    # Long body
+    glBegin(GL_QUADS)
+    glVertex2f(x, y+size*0.2)
+    glVertex2f(x+size, y+size*0.2)
+    glVertex2f(x+size, y+size*0.3)
+    glVertex2f(x, y+size*0.3)
+    glEnd()
+    # Handle
+    glBegin(GL_QUADS)
+    glVertex2f(x+size*0.2, y)
+    glVertex2f(x+size*0.3, y)
+    glVertex2f(x+size*0.3, y+size*0.2)
+    glVertex2f(x+size*0.2, y+size*0.2)
+    glEnd()
+
+def draw_rocket_launcher_2d(x, y, size):
+    glColor3f(0.8,0.4,0.0)
+    # Main tube
+    glBegin(GL_QUADS)
+    glVertex2f(x, y+size*0.4)
+    glVertex2f(x+size, y+size*0.4)
+    glVertex2f(x+size, y+size*0.5)
+    glVertex2f(x, y+size*0.5)
+    glEnd()
+    # Handle
+    glBegin(GL_QUADS)
+    glVertex2f(x+size*0.4, y)
+    glVertex2f(x+size*0.5, y)
+    glVertex2f(x+size*0.5, y+size*0.4)
+    glVertex2f(x+size*0.4, y+size*0.4)
+    glEnd()
+
+def draw_weapon_icon_2d(wid, x, y, size):
     if wid == "pistol":
-        draw_pistol()
+        draw_pistol_2d(x, y, size)
     elif wid == "shotgun":
-        draw_shotgun()
+        draw_shotgun_2d(x, y, size)
     elif wid == "rocket":
-        draw_rocket_launcher()
+        draw_rocket_launcher_2d(x, y, size)
     else:
-        glColor3f(*get_weapon_color(wid))
-        draw_box(0,0,0,0.1,0.1,0.2)
+        c = get_weapon_color(wid)
+        glColor3f(*c)
+        glBegin(GL_QUADS)
+        glVertex2f(x, y)
+        glVertex2f(x+size, y)
+        glVertex2f(x+size, y+size)
+        glVertex2f(x, y+size)
+        glEnd()
 
 def procedural_clouds(px, pz, radius=RENDER_DISTANCE):
     from config import chunk_coords_from_world
@@ -285,7 +342,7 @@ def main():
     pygame.init()
     pygame.font.init()
     pygame.mixer.init()
-    pygame.mixer.set_num_channels(64)  # multiple sounds can overlap now
+    pygame.mixer.set_num_channels(64)
 
     snd_explosion = pygame.mixer.Sound("assets/explosion.flac")
     snd_hit = pygame.mixer.Sound("assets/hit.flac")
@@ -296,11 +353,11 @@ def main():
     snd_ammo = pygame.mixer.Sound("assets/ammo.flac")
     snd_robodrone = pygame.mixer.Sound("assets/robodrone.flac")
 
+    # Restore drone sound assignments
     robodrone_sound = snd_robodrone
-
-    entities.enemy_pistol_sound = snd_pistol
     entities.robodrone_sound = snd_robodrone
-    entities.robodrone_explosion_sound = snd_explosion  # re-use explosion sound for drone explosions
+    entities.enemy_pistol_sound = snd_pistol
+    entities.robodrone_explosion_sound = snd_explosion
 
     font = pygame.font.SysFont("Arial", 18)
 
@@ -350,8 +407,6 @@ def main():
 
     from config import all_enemies
 
-    # We'll manage the robodrone sound in main now:
-    # We'll only play it for the closest drone.
     robodrone_channel = None
 
     def play_sound_with_distance(sound, sx, sy, sz):
@@ -523,8 +578,6 @@ def main():
                 was_alive = r.alive
                 still_alive = r.update(world, all_enemies, explosions, dt_s)
                 if was_alive and not r.alive:
-                    # Explosion sound is already handled by rocket explode logic in main after update?
-                    # Actually we just noticed rocket explosion sound is played above in code after update
                     snd_explosion.play()
                 if still_alive:
                     new_rockets.append(r)
@@ -540,8 +593,7 @@ def main():
                     new_enemies.append(e)
             all_enemies[:] = new_enemies
 
-            # Drone sound logic:
-            # Find the closest drone
+            # Drone sound logic back as it was
             closest_dist = 9999999
             closest_drone = None
             for e in all_enemies:
@@ -554,19 +606,13 @@ def main():
                         closest_dist = dist
                         closest_drone = e
 
-            # If we found a closest drone within 24 units (hearing range?), play looped sound
-            # If no drone or too far, stop the sound
             if closest_drone is not None and closest_dist <= 24.0:
                 volume = max(0.0, 1.0 - (closest_dist / 24.0))
-                # If robodrone_sound is set, ensure it plays on a specific channel:
-                # We'll just keep track of a single channel for drones:
                 if robodrone_sound is not None:
                     if robodrone_channel is None or not robodrone_channel.get_busy():
-                        # start playing looped
                         robodrone_channel = robodrone_sound.play(-1)
                     robodrone_channel.set_volume(volume)
             else:
-                # No close drone
                 if robodrone_channel is not None and robodrone_channel.get_busy():
                     robodrone_channel.stop()
                     robodrone_channel = None
@@ -584,10 +630,6 @@ def main():
             glMatrixMode(GL_MODELVIEW)
             glLoadIdentity()
             gluLookAt(px, eye_y, pz, px+dx, eye_y+dy, pz+dz, 0,1,0)
-
-            projection = glGetDoublev(GL_PROJECTION_MATRIX)
-            modelview = glGetDoublev(GL_MODELVIEW_MATRIX)
-            viewport = glGetIntegerv(GL_VIEWPORT)
 
             draw_clouds(px, py, pz, rx, ry)
 
@@ -611,19 +653,18 @@ def main():
             for en in all_enemies:
                 en.draw()
 
-            # Enemy HP bars
             enemy_positions_2d = []
             w, h = screen.get_size()
+            projection = glGetDoublev(GL_PROJECTION_MATRIX)
+            modelview = glGetDoublev(GL_MODELVIEW_MATRIX)
+            viewport = glGetIntegerv(GL_VIEWPORT)
             for en in all_enemies:
                 dist = math.sqrt((en.x - px)**2 + (en.y - py)**2 + (en.z - pz)**2)
                 if dist <= 20.0 and en.health > 0:
                     exv = en.x - px
                     eyv = (en.y+1.2) - eye_y
                     ezv = en.z - pz
-                    fdx = dx
-                    fdy = dy
-                    fdz = dz
-                    dot = exv*fdx + eyv*fdy + ezv*fdz
+                    dot = exv*dx + eyv*dy + ezv*dz
                     if dot < 0:
                         continue
                     wx, wy, wz = gluProject(en.x, en.y+1.2, en.z, modelview, projection, viewport)
@@ -646,7 +687,17 @@ def main():
         glDisable(GL_DEPTH_TEST)
         glTranslatef(0.0, -0.2, -0.5)
         if px is not None:
-            draw_simple_weapon(current_weapon_id())
+            # restore original 3D weapon models
+            wid = current_weapon_id()
+            if wid == "pistol":
+                draw_pistol()
+            elif wid == "shotgun":
+                draw_shotgun()
+            elif wid == "rocket":
+                draw_rocket_launcher()
+            else:
+                glColor3f(*get_weapon_color(wid))
+                draw_box(0,0,0,0.1,0.1,0.2)
 
         glEnable(GL_DEPTH_TEST)
         glPopMatrix()
@@ -658,16 +709,15 @@ def main():
         glMatrixMode(GL_PROJECTION)
         glPushMatrix()
         glLoadIdentity()
-        w, h = screen.get_size()
         glOrtho(0, w, h, 0, -1, 1)
         glMatrixMode(GL_MODELVIEW)
         glPushMatrix()
         glLoadIdentity()
 
-        glColor3f(1,1,1)
+        # Crosshair
         cx = w//2
         cy = h//2
-        # Crosshair
+        glColor3f(1,1,1)
         glBegin(GL_LINES)
         glVertex2f(cx - 10, cy)
         glVertex2f(cx + 10, cy)
@@ -676,85 +726,115 @@ def main():
         glEnd()
 
         if px is not None:
-            draw_text_2d_cached(font, f"FPS: {fps:.1f}", 10, 10)
-            wname = current_weapon_name()
-            wammo = current_weapon_ammo()
-            draw_text_2d_cached(font, f"Weapon: {wname}  Ammo: {wammo}", 10, h-30)
-            def draw_health_bar(w,h):
-                bar_width = 200
-                bar_height = 20
-                x = 10
-                y = 40
-                health_ratio = player_health / float(PLAYER_MAX_HEALTH)
+            slot_size = 50
+            slot_x_start = 10
+            slot_y = h - slot_size - 10
+            slot_spacing = 5
+            inventory_width = 8*slot_size + 7*slot_spacing
+
+            weapon_slots = ["pistol","shotgun","rocket"]
+            inventory_slots = []
+            inventory_slots.extend(weapon_slots)
+            while len(inventory_slots) < 8:
+                inventory_slots.append(None)
+
+            for i, wid in enumerate(inventory_slots):
+                sx = slot_x_start + i*(slot_size + slot_spacing)
                 glColor3f(0.2,0.2,0.2)
                 glBegin(GL_QUADS)
-                glVertex2f(x, y)
-                glVertex2f(x+bar_width, y)
-                glVertex2f(x+bar_width, y+bar_height)
-                glVertex2f(x, y+bar_height)
+                glVertex2f(sx, slot_y)
+                glVertex2f(sx+slot_size, slot_y)
+                glVertex2f(sx+slot_size, slot_y+slot_size)
+                glVertex2f(sx, slot_y+slot_size)
                 glEnd()
-                glColor3f(1.0 - health_ratio,health_ratio,0.0)
-                glBegin(GL_QUADS)
-                glVertex2f(x, y)
-                glVertex2f(x+bar_width*health_ratio, y)
-                glVertex2f(x+bar_width*health_ratio, y+bar_height)
-                glVertex2f(x, y+bar_height)
-                glEnd()
-            draw_health_bar(w,h)
 
-            icon_y = h-70
-            icon_x = 10
-            size = 20
-            for i,wdef in enumerate(WEAPONS):
-                wid_ = wdef["id"]
-                c = get_weapon_color(wid_)
-                glColor3f(*c)
-                glBegin(GL_QUADS)
-                glVertex2f(icon_x, icon_y)
-                glVertex2f(icon_x+size, icon_y)
-                glVertex2f(icon_x+size, icon_y+size)
-                glVertex2f(icon_x, icon_y+size)
+                glColor3f(0,0,0)
+                glBegin(GL_LINE_LOOP)
+                glVertex2f(sx, slot_y)
+                glVertex2f(sx+slot_size, slot_y)
+                glVertex2f(sx+slot_size, slot_y+slot_size)
+                glVertex2f(sx, slot_y+slot_size)
                 glEnd()
-                if i == current_weapon_index:
+
+                if wid and wid == current_weapon_id():
                     glColor3f(1,1,1)
                     glBegin(GL_LINE_LOOP)
-                    glVertex2f(icon_x, icon_y)
-                    glVertex2f(icon_x+size, icon_y)
-                    glVertex2f(icon_x+size, icon_y+size)
-                    glVertex2f(icon_x, icon_y+size)
+                    glVertex2f(sx, slot_y)
+                    glVertex2f(sx+slot_size, slot_y)
+                    glVertex2f(sx+slot_size, slot_y+slot_size)
+                    glVertex2f(sx, slot_y+slot_size)
                     glEnd()
-                icon_x += size+5
 
+                if wid is not None:
+                    # Draw 2D weapon icon
+                    draw_weapon_icon_2d(wid, sx+5, slot_y+5, slot_size-10)
+                    # Ensure ammo counts are white
+                    glColor3f(1,1,1)
+                    ammo_count = inventory[wid]["ammo"] if wid in inventory else 0
+                    draw_text_2d_cached(font, f"{ammo_count}", sx+5, slot_y+slot_size-20)
+
+            # Life bar extended full width of inventory
+            lb_y = slot_y - 30
+            bar_width = inventory_width
+            bar_height = 20
+            x = slot_x_start
+            y = lb_y
+            health_ratio = player_health / float(PLAYER_MAX_HEALTH)
+
+            glColor3f(0,0,0)
+            glBegin(GL_QUADS)
+            glVertex2f(x-1, y-1)
+            glVertex2f(x+bar_width+1, y-1)
+            glVertex2f(x+bar_width+1, y+bar_height+1)
+            glVertex2f(x-1, y+bar_height+1)
+            glEnd()
+
+            glColor3f(0.2,0.2,0.2)
+            glBegin(GL_QUADS)
+            glVertex2f(x, y)
+            glVertex2f(x+bar_width, y)
+            glVertex2f(x+bar_width, y+bar_height)
+            glVertex2f(x, y+bar_height)
+            glEnd()
+
+            glColor3f(1.0 - health_ratio,health_ratio,0.0)
+            glBegin(GL_QUADS)
+            glVertex2f(x, y)
+            glVertex2f(x+bar_width*health_ratio, y)
+            glVertex2f(x+bar_width*health_ratio, y+bar_height)
+            glVertex2f(x, y+bar_height)
+            glEnd()
+
+            # Enemy HP bars
             for (ex, ey, hp_ratio, dist) in enemy_positions_2d:
-                bar_width = 30
-                bar_height = 4
-                bx = ex - bar_width/2
+                bar_width_e = 30
+                bar_height_e = 4
+                bx = ex - bar_width_e/2
                 by = ey - 2
 
                 glColor3f(0,0,0)
                 glBegin(GL_LINE_LOOP)
                 glVertex2f(bx, by)
-                glVertex2f(bx+bar_width, by)
-                glVertex2f(bx+bar_width, by+bar_height)
-                glVertex2f(bx, by+bar_height)
+                glVertex2f(bx+bar_width_e, by)
+                glVertex2f(bx+bar_width_e, by+bar_height_e)
+                glVertex2f(bx, by+bar_height_e)
                 glEnd()
 
                 glColor3f(0.2,0.2,0.2)
                 glBegin(GL_QUADS)
                 glVertex2f(bx, by)
-                glVertex2f(bx+bar_width, by)
-                glVertex2f(bx+bar_width, by+bar_height)
-                glVertex2f(bx, by+bar_height)
+                glVertex2f(bx+bar_width_e, by)
+                glVertex2f(bx+bar_width_e, by+bar_height_e)
+                glVertex2f(bx, by+bar_height_e)
                 glEnd()
 
                 glColor3f(1.0 - hp_ratio, hp_ratio, 0.0)
                 glBegin(GL_QUADS)
                 glVertex2f(bx, by)
-                glVertex2f(bx+bar_width*hp_ratio, by)
-                glVertex2f(bx+bar_width*hp_ratio, by+bar_height)
-                glVertex2f(bx, by+bar_height)
+                glVertex2f(bx+bar_width_e*hp_ratio, by)
+                glVertex2f(bx+bar_width_e*hp_ratio, by+bar_height_e)
+                glVertex2f(bx, by+bar_height_e)
                 glEnd()
-
         else:
             draw_text_2d_cached(font, "Loading chunks...", w//2 - 50, h//2)
 
